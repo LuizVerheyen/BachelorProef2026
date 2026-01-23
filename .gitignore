@@ -1,0 +1,54 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# =========================
+# Environment variables
+# =========================
+.env
+
+# =========================
+# Jupyter
+# =========================
+.ipynb_checkpoints/
+
+# =========================
+# Data (never commit raw data)
+# =========================
+data/raw/
+data/processed/
+data/external/
+
+# =========================
+# Database
+# =========================
+*.db
+*.sqlite
+*.log
+
+# =========================
+# Results & outputs
+# =========================
+results/
+experiments/
+
+# =========================
+# IDE / Editor
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db

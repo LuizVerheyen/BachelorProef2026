@@ -1,0 +1,31 @@
+# Core
+python-dotenv
+
+# Data handling
+numpy
+pandas
+
+# Market data
+yfinance
+
+# Social media scraping
+snscrape
+
+# Economic data
+fredapi
+requests
+
+# Feature engineering / indicators
+ta
+
+# Machine Learning
+scikit-learn
+tensorflow
+keras
+
+# Database
+sqlalchemy
+pyodbc
+
+# Visualization (later, for evaluation)
+matplotlib
