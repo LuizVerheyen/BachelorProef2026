@@ -7,139 +7,154 @@ from dotenv import load_dotenv
 import re
 import logging
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 def fetcher_news():
     load_dotenv()
 
     API_KEY = os.getenv("NYT_API_KEY")
     if not API_KEY:
-        logging.error("Geen API key gevonden in .env bestand.")
-        return
+        logger.error("❌ Geen NYT_API_KEY gevonden in .env bestand.")
+        return None
 
-    START_YEAR = 2006
+    logger.info("✅ API key geladen")
+
+    START_YEAR = 2016
     CURRENT_YEAR = datetime.now().year
     CURRENT_MONTH = datetime.now().month
+    total_years = CURRENT_YEAR - START_YEAR + 1
 
-    keywords = [
-        # Macro economie
-        "inflation", "deflation", "interest rates", "rate hike", "rate cut",
-        "recession", "economic slowdown", "gdp", "consumer spending",
-        "unemployment", "job growth", "employment", "wage growth",
-        "housing market", "real estate", "credit", "debt", "liquidity",
+    logger.info(f"📅 Ophalen van {START_YEAR} t/m {CURRENT_YEAR} ({total_years} jaar)")
 
-        # Centrale banken / beleid
-        "federal reserve", "fed", "ecb", "central bank",
-        "monetary policy", "quantitative easing", "quantitative tightening",
-        "bond yields", "treasury yields",
+    # keywords = [
+    #     "inflation", "deflation", "interest rates", "rate hike", "rate cut",
+    #     "recession", "economic slowdown", "gdp", "consumer spending",
+    #     "unemployment", "job growth", "employment", "wage growth",
+    #     "housing market", "real estate", "credit", "debt", "liquidity",
+    #     "federal reserve", "fed", "ecb", "central bank",
+    #     "monetary policy", "quantitative easing", "quantitative tightening",
+    #     "bond yields", "treasury yields",
+    #     "stock market", "stocks", "equities", "bull market", "bear market",
+    #     "market rally", "market crash", "selloff", "volatility", "correction",
+    #     "overvalued", "undervalued", "bubble",
+    #     "earnings", "earnings report", "revenue", "profit", "guidance",
+    #     "forecast", "downgrade", "upgrade", "ipo", "merger", "acquisition",
+    #     "ai", "artificial intelligence", "machine learning", "automation",
+    #     "semiconductors", "chips", "nvidia", "openai", "cloud computing",
+    #     "elon musk", "tesla", "apple", "microsoft", "amazon", "google", "meta",
+    #     "trump", "biden", "white house", "election",
+    #     "war", "conflict", "sanctions", "china", "russia", "ukraine",
+    #     "middle east", "trade war", "tariffs",
+    #     "oil", "gold", "commodities", "energy prices", "gas prices",
+    #     "fear", "panic", "uncertainty", "risk", "risk-off", "risk-on",
+    #     "investor sentiment",
+    #     "bitcoin", "crypto", "cryptocurrency", "blockchain",
+    #     "banking crisis", "bank failure", "liquidity crisis",
+    #     "credit crunch"
+    # ]
 
-        # Markt / trading termen
-        "stock market", "stocks", "equities", "bull market", "bear market",
-        "market rally", "market crash", "selloff", "volatility", "correction",
-        "overvalued", "undervalued", "bubble",
-
-        # Bedrijven / earnings
-        "earnings", "earnings report", "revenue", "profit", "guidance",
-        "forecast", "downgrade", "upgrade", "ipo", "merger", "acquisition",
-
-        # Tech / AI (super belangrijk momenteel)
-        "ai", "artificial intelligence", "machine learning", "automation",
-        "semiconductors", "chips", "nvidia", "openai", "cloud computing",
-
-        # Grote namen (markt movers)
-        "elon musk", "tesla", "apple", "microsoft", "amazon", "google", "meta",
-
-        # Politiek / geopolitiek
-        "trump", "biden", "white house", "election",
-        "war", "conflict", "sanctions", "china", "russia", "ukraine",
-        "middle east", "trade war", "tariffs",
-
-        # Grondstoffen / alternatieven
-        "oil", "gold", "commodities", "energy prices", "gas prices",
-
-        # Sentiment / angst
-        "fear", "panic", "uncertainty", "risk", "risk-off", "risk-on",
-        "investor sentiment",
-
-        # Crypto (vaak leading indicator voor risk appetite)
-        "bitcoin", "crypto", "cryptocurrency", "blockchain",
-
-        # Banken / financiële stress
-        "banking crisis", "bank failure", "liquidity crisis",
-        "credit crunch", "default"
-    ]
-
-    sections = ["Business Day", "Health", "Education", "Science", "Blogs", 
-                "U.S.", "New York", "Real Estate", "Washington", 
+    sections = ["Business Day", "Health", "Education", "Science", "Blogs",
+                "U.S.", "New York", "Real Estate", "Washington",
                 "World", "Your Money", "Technology", "Job Market"]
 
-    keyword_patterns = [
-        re.compile(rf"\b{re.escape(word)}\b", re.IGNORECASE)
-        for word in keywords
-    ]
-    
-    filename = f"../../raw/news/nyt_data.csv"
+    # keyword_patterns = [
+    #     re.compile(rf"\b{re.escape(word)}\b", re.IGNORECASE)
+    #     for word in keywords
+    # ]
+
+    # logger.info(f"🔍 {len(keywords)} keywords geladen, {len(sections)} secties gefilterd")
+
+    all_data = []
+    failed_months = []  # bijhouden welke maanden mislukten
 
     for year in range(START_YEAR, CURRENT_YEAR + 1):
-        year_data = []
         seen_headlines = set()
         end_month = CURRENT_MONTH if year == CURRENT_YEAR else 12
+        year_count = 0
+
+        logger.info(f"📆 Bezig met jaar {year} ({year - START_YEAR + 1}/{total_years})...")
 
         for month in range(1, end_month + 1):
             url = f"https://api.nytimes.com/svc/archive/v1/{year}/{month}.json?api-key={API_KEY}"
-            
+
             try:
-                # De ENIGE API call voor deze maand
+                logger.debug(f"   → Request: {year}-{month:02d}")
                 response = requests.get(url, timeout=30)
 
                 if response.status_code == 200:
-
                     data = response.json()
                     articles = data.get('response', {}).get('docs', [])
+                    month_count = 0
 
                     for art in articles:
                         headline = art.get('headline', {}).get('main', "").lower()
                         section = art.get('section_name')
 
-                        if not headline or section not in sections:
+                        if not headline or headline in seen_headlines or section not in sections:
                             continue
-
-                        if headline in seen_headlines:
-                            continue
-
-                        if any(p.search(headline) for p in keyword_patterns):
+                        else:
                             seen_headlines.add(headline)
-                            year_data.append({
-                                'pub_date': art.get('pub_date'),
+                            pub_date = art.get('pub_date', '')
+                            date_key = pub_date[:10].replace('-', '') if pub_date else None
+                            all_data.append({
+                                'DateKey': int(date_key) if date_key else None,
                                 'headline': headline,
                                 'abstract': art.get('abstract'),
                                 'section': section,
                                 'web_url': art.get('web_url')
                             })
+                            month_count += 1
+                            year_count += 1
+
+                    logger.info(f"   ✅ {year}-{month:02d}: {len(articles)} artikelen ontvangen → {month_count} relevant")
 
                 elif response.status_code == 429:
-                    print("Rate limit bereikt (429) → 60s afkoelen...")
-                    print(f"Resterend vandaag: {response.headers.get('X-RateLimit-Remaining')}")
+                    logger.warning(f"   ⏳ Rate limit (429) bij {year}-{month:02d} → 60s wachten...")
                     time.sleep(60)
-                    # Optioneel: herhaal de poging voor deze maand door 'continue' te gebruiken
-                    # maar zorg dat de maand-loop niet crasht.
-                    continue 
+                    failed_months.append(f"{year}-{month:02d}")
+                    continue
+
+                elif response.status_code == 401:
+                    logger.error("   ❌ API key ongeldig (401) — script gestopt")
+                    return None
 
                 else:
-                    logging.error(f"Fout {response.status_code} bij {year}-{month}")
+                    logger.error(f"   ❌ Onverwachte statuscode {response.status_code} bij {year}-{month:02d}")
+                    failed_months.append(f"{year}-{month:02d}")
+
+            except requests.exceptions.Timeout:
+                logger.error(f"   ⏱️ Timeout bij {year}-{month:02d} — wordt overgeslagen")
+                failed_months.append(f"{year}-{month:02d}")
+
+            except requests.exceptions.ConnectionError:
+                logger.error(f"   🌐 Geen verbinding bij {year}-{month:02d} — wordt overgeslagen")
+                failed_months.append(f"{year}-{month:02d}")
 
             except Exception as e:
-                logging.error(f"Kritieke fout bij {year}-{month}: {e}")
+                logger.error(f"   💥 Onverwachte fout bij {year}-{month:02d}: {e}")
+                failed_months.append(f"{year}-{month:02d}")
 
-            # Cruciaal: NYT staat 5 requests per minuut toe. 
-            # 60 seconden / 5 = 12 seconden per request.
             time.sleep(12)
 
-        # Opslaan per jaar
-        if year_data:
-            df = pd.DataFrame(year_data)
-            df.to_csv(filename, index=False, encoding='utf-8', mode='a')
-            logging.info(f"SUCCES: {filename} opgeslagen ({len(df)} artikelen)")
-        else:
-            logging.warning(f"Geen data gevonden voor jaar {year}")
+        logger.info(f"✅ Jaar {year} klaar — {year_count} relevante artikelen | Totaal tot nu: {len(all_data)}")
 
-if __name__ == "__main__":
-    fetcher_news()
+    # Samenvatting
+    logger.info("=" * 50)
+    logger.info(f"📊 SAMENVATTING:")
+    logger.info(f"   Totaal artikelen:     {len(all_data)}")
+    logger.info(f"   Mislukte maanden:     {len(failed_months)}")
+    if failed_months:
+        logger.warning(f"   ⚠️ Mislukte maanden: {', '.join(failed_months)}")
+    logger.info("=" * 50)
+
+    if not all_data:
+        logger.warning("⚠️ Geen data opgehaald — None gereturned")
+        return None
+
+    df = pd.DataFrame(all_data)
+    logger.info(f"✅ DataFrame aangemaakt: {len(df)} rijen, {len(df.columns)} kolommen")
+    return df
