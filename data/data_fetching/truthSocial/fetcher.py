@@ -1,7 +1,7 @@
 import pandas as pd
 from pathlib import Path
 import sys
-from database.connectie.connectie import getData,get_engine
+from database.connectie.connectie import get_engine
 
 ROOT = Path().resolve()
 sys.path.append(str(ROOT))
@@ -17,40 +17,53 @@ def dimTwitterUser():
 
     
 def dimTwitter():
-    """
-    df: DataFrame met de nieuwe tweets (bevat kolom 'UserName', 'DateKey', 'Text')
-    engine: De SQLAlchemy engine connectie naar je SSMS database
-    """
+    # 1. Haal UserID's op (zoals je al deed)
+    query_users = "SELECT UserID, UserName FROM DimTwitterUsers"
+    df_users = pd.read_sql(query_users, engine)
     
-    # 1. Haal de koppeltabel op uit de database (ID's en Usernames)
-    query = "SELECT UserID, UserName FROM DimTwitterUsers"
-    df_users = pd.read_sql(query, engine)
-    df_users.rename(columns={
-        "UserName": "username"
-    },inplace=True)
-    print(df_users.head())
-    print(df.head())
+    # Merge om UserID te krijgen
+    df_merged = pd.merge(df, df_users, left_on='username', right_on='UserName', how='left')
     
-    # 2. Gebruik een 'merge' om de UserID bij de juiste UserName in je df te plakken
-    # Dit werkt exact als een SQL JOIN
-    df_merged = pd.merge(
-        df, 
-        df_users, 
-        on='username', 
-        how='left'
-    )
-    print(df_merged.head())
-    
-    # 3. Optioneel: Controleer op nieuwe gebruikers die nog niet in DimTwitterUsers staan
-    # Als UserID NaN (null) is, betekent dit dat de gebruiker nog niet in de DB staat.
-    if df_merged['UserID'].isnull().any():
-        print("Waarschuwing: Sommige gebruikers zijn onbekend en krijgen geen ID.")
+    # We hebben de URL nodig om later de TweetID terug te vinden
+    # Zorg dat je 'url' kolom meeneemt als je DimTwitter vult
+    return df_merged[['DateKey', 'UserID', 'Text', 'url']]
 
-    # 4. Geef alleen de gewenste kolommen terug voor DimTwitter
-    return df_merged[['DateKey', 'UserID', 'Text']]
-
-# Gebruik:
-# df_dim_twitter = dimTwitter(raw_data_df, engine)
 
 def factTwitter():
-    return(df[['likes', 'comments', 'reposts']])
+    # 1. Haal de zojuist aangemaakte TweetID's op uit de Database
+    # We gebruiken de URL (of Text als je geen URL kolom hebt) als match-sleutel
+    query_tweets = "SELECT TweetID, url FROM DimTwitter" 
+    # ^ Let op: voeg [url] toe aan je DimTwitter tabel/DDL als dat nog niet zo is!
+    
+    df_db_tweets = pd.read_sql(query_tweets, engine)
+
+    # 2. Merge de CSV data met de database ID's
+    # We koppelen de originele 'df' (met likes/comments) aan de 'df_db_tweets' (met TweetID)
+    df_fact = pd.merge(
+        df, 
+        df_db_tweets, 
+        on='url', 
+        how='inner'
+    )
+
+    # 3. Haal ook de UserID erbij (nodig voor je FactTwitter tabel)
+    query_users = "SELECT UserID, UserName FROM DimTwitterUsers"
+    df_users = pd.read_sql(query_users, engine)
+    
+    df_fact = pd.merge(
+        df_fact,
+        df_users,
+        left_on='username',
+        right_on='UserName',
+        how='left'
+    )
+
+    # 4. Selecteer de kolommen voor FactTwitter volgens je DDL
+    # Hernoem indien nodig naar de exacte kolomnamen van je tabel
+    return df_fact[['TweetID', 'UserID', 'comments', 'likes', 'reposts']].rename(columns={
+        'comments': 'Comments',
+        'likes': 'Likes',
+        'reposts': 'Reposts'
+    })
+    
+    

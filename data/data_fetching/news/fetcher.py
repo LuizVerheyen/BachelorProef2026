@@ -5,35 +5,18 @@ import pandas as pd
 from datetime import datetime
 from dotenv import load_dotenv
 import re
-import logging
 from pathlib import Path
 import sys
 
 ROOT = Path().resolve()
 sys.path.append(str(ROOT))
 
-# ---------------------------
-# LOGGING
-# ---------------------------
-logging.basicConfig(
-    filename="nyt_fetch.log",
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+load_dotenv()
 
-def fetcher_news():
-    load_dotenv()
+API_KEY = os.getenv("NYT_API_KEY")
+CSV_PATH = Path(ROOT / "data" / "raw" / "news")
 
-    API_KEY = os.getenv("NYT_API_KEY")
-    if not API_KEY:
-        logging.error("Geen API key gevonden in .env bestand.")
-        return
-
-    START_YEAR = 2006
-    CURRENT_YEAR = datetime.now().year
-    CURRENT_MONTH = datetime.now().month
-
-    keywords = [
+KEYWORDS = [
         # Macro economie
         "inflation", "deflation", "interest rates", "rate hike", "rate cut",
         "recession", "economic slowdown", "gdp", "consumer spending",
@@ -79,27 +62,38 @@ def fetcher_news():
         # Banken / financiële stress
         "banking crisis", "bank failure", "liquidity crisis",
         "credit crunch", "default"
-    ]
+]
 
-    sections = ["Business Day", "Health", "Education", "Science", "Blogs", 
-                "U.S.", "New York", "Real Estate", "Washington", 
-                "World", "Your Money", "Technology", "Job Market"]
+SECTIONS = ["Business Day", "Health", "Education", "Science", "Blogs", 
+            "U.S.", "New York", "Real Estate", "Washington", 
+            "World", "Your Money", "Technology", "Job Market"]
+
+
+def factNews():
+    if not API_KEY:
+        print("Geen API key gevonden in .env bestand.")
+        return
+
+    START_YEAR = 2016
+    CURRENT_YEAR = datetime.now().year
+    CURRENT_MONTH = datetime.now().month
+
 
     keyword_patterns = [
         re.compile(rf"\b{re.escape(word)}\b", re.IGNORECASE)
-        for word in keywords
+        for word in KEYWORDS
     ]
     
-    filename = f"nyt_data.csv"
+    FILENAME = f"nyt_data.csv"
 
     for year in range(START_YEAR, CURRENT_YEAR + 1):
         year_data = []
         seen_headlines = set()
         end_month = CURRENT_MONTH if year == CURRENT_YEAR else 12
-
+        print(f"Doing Year: {year}")
         for month in range(1, end_month + 1):
             url = f"https://api.nytimes.com/svc/archive/v1/{year}/{month}.json?api-key={API_KEY}"
-            
+            print(f"Month: {month}")
             try:
                 # De ENIGE API call voor deze maand
                 response = requests.get(url, timeout=30)
@@ -113,7 +107,7 @@ def fetcher_news():
                         headline = art.get('headline', {}).get('main', "").lower()
                         section = art.get('section_name')
 
-                        if not headline or section not in sections:
+                        if not headline or section not in SECTIONS:
                             continue
 
                         if headline in seen_headlines:
@@ -122,25 +116,17 @@ def fetcher_news():
                         if any(p.search(headline) for p in keyword_patterns):
                             seen_headlines.add(headline)
                             year_data.append({
-                                'pub_date': art.get('pub_date'),
-                                'headline': headline,
-                                'abstract': art.get('abstract'),
-                                'section': section,
-                                'web_url': art.get('web_url')
+                                'DateKey': art.get('pub_date'),
+                                'Headline': headline,
+                                'Abstract': art.get('abstract'),
+                                'Section': section,
+                                'URL': art.get('web_url')
                             })
-
-                elif response.status_code == 429:
-                    logging.warning("Rate limit bereikt (429) → 60s afkoelen...")
-                    time.sleep(60)
-                    # Optioneel: herhaal de poging voor deze maand door 'continue' te gebruiken
-                    # maar zorg dat de maand-loop niet crasht.
-                    continue 
-
                 else:
-                    logging.error(f"Fout {response.status_code} bij {year}-{month}")
+                    print(f"Fout {response.status_code} bij {year}-{month}")
 
             except Exception as e:
-                logging.error(f"Kritieke fout bij {year}-{month}: {e}")
+                print(f"Kritieke fout bij {year}-{month}: {e}")
 
             # Cruciaal: NYT staat 5 requests per minuut toe. 
             # 60 seconden / 5 = 12 seconden per request.
@@ -149,10 +135,13 @@ def fetcher_news():
         # Opslaan per jaar
         if year_data:
             df = pd.DataFrame(year_data)
-            df.to_csv(filename, index=False, encoding='utf-8', mode='a')
-            logging.info(f"SUCCES: {filename} opgeslagen ({len(df)} artikelen)")
+            df['DateKey'] = pd.to_datetime(df['DateKey'], format='ISO8601').dt.strftime('%Y%m%d').astype(int)
+            df.to_csv(f"{CSV_PATH}/{FILENAME}", index=False, mode='a')
+            print(f"SUCCES: {FILENAME} opgeslagen ({len(df)} artikelen)")
         else:
-            logging.warning(f"Geen data gevonden voor jaar {year}")
+            print(f"Geen data gevonden voor jaar {year}")
+            
+    return df
 
 
 def dimSource():
@@ -160,8 +149,8 @@ def dimSource():
     
     df.rename(columns={
         "site_name" : "SourceName",
-        "factual_reporting_rating" : "FactualReportRating",
-        'bias_label' : "BiasRating"
+        'bias_label' : "BiasRating",
+        "factual_reporting_rating" : "FactualReportRating"
     }, inplace=True)
     
     return df

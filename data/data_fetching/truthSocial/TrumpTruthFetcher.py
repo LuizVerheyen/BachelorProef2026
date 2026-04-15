@@ -13,8 +13,8 @@ from urllib3.util.retry import Retry
 # ==============================================================================
 # CONFIGURATIE
 # ==============================================================================
-START_DATE  = '2022-01-01'
-OUTPUT_FILE = 'trump_tweets.csv'
+START_DATE  = '2026-04-14'
+OUTPUT_FILE = '../../processed/trump_tweets.csv'
 PER_PAGE    = 100
 CHECKPOINT_EVERY = 10  # pagina's
 
@@ -54,15 +54,25 @@ def load_existing_urls():
 
 
 def save(data, original_url):
+    """Slaat data op en behoudt de kolomvolgorde."""
     if not data:
         return
+    
     new_df = pd.DataFrame(data)
+    
     if os.path.exists(OUTPUT_FILE):
         existing_df = pd.read_csv(OUTPUT_FILE)
         combined = pd.concat([existing_df, new_df], ignore_index=True)
     else:
         combined = new_df
+    
+    # Verwijder duplicaten op basis van url
     combined = combined.drop_duplicates(subset='url', keep='last')
+    
+    # Forceer de kolomvolgorde voor het geval dat
+    cols = ['url', 'original_url', 'username', 'DateKey', 'TimeKey', 'Text', 'deleted','likes','reposts','comments']
+    combined = combined[cols]
+    
     combined.to_csv(OUTPUT_FILE, index=False, encoding='utf-8-sig')
     print(f"💾 {len(combined)} rijen opgeslagen in {OUTPUT_FILE}")
 
@@ -73,7 +83,6 @@ def save(data, original_url):
 
 def scrape_trump_search():
     end_date = datetime.now().strftime("%Y-%m-%d")  # berekend bij gebruik
-    end_date = "2023-03-14"
     existing_urls = load_existing_urls()
     print(f"ℹ️ {len(existing_urls)} bestaande URLs geladen")
 
@@ -122,11 +131,15 @@ def scrape_trump_search():
 
             all_data.append({
                 'url':      post_url,
+                'original_url' : None,
                 'username': "realDonaldTrump",
                 'DateKey':  date_key,
                 'TimeKey':  time_key,
                 'Text':     text,
-                'deleted':  deleted
+                'deleted':  deleted,
+                "likes" : None,
+                'reposts': None,
+                'comments': None
             })
             existing_urls.add(post_url)
             new_on_page += 1

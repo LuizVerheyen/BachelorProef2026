@@ -1,40 +1,48 @@
 import yfinance as yf
-from datetime import datetime
 import pandas as pd
+
 
 STOCKS = ['^GSPC', 'LMT', 'CVX', 'XOM', 'XLE', 'GLD', '^BFX', 'ABI.BR', 'UCB.BR', 'KBC.BR']
 
-def fetchStocks(start_date='2016-01-01'):
-    frames = []
+def fetch_stocks_to_long_format(start_date='2016-01-01'):
+    all_data = []
 
-    for stock in STOCKS:
-        df = yf.download(tickers=stock, start=start_date, progress=False, auto_adjust=True)
-        df = df.reset_index()
-        df.columns = ['Date','Close', 'High', 'Low', 'Open', 'Volume']
-        df['DateKey'] = df['Date'].astype(str).str.replace('-', '').astype(int)
-        df.drop(columns=['Date'], inplace=True)
-        df['Ticker'] = stock
-        frames.append(df)
-
-    return pd.concat(frames, ignore_index=True)
-
-
-
-
-def DimStock(stocks=STOCKS):
-    ticker = yf.Ticker(stock)
-    info = ticker.info
-    frames = []
-
-    for stock in stocks:
-        df = yf.download(tickers=stock, start=datetime.now().strftime("%Y-%m-%d"), progress=False)
-        df = df.reset_index()
-        df['StockName'] = info.get('longName', info.get('shortName', 'Unknown'))
-        df['Type']      = info.get('quoteType', 'Unknown')  # bijv. ETF, EQUITY, INDEX, MUTUALFUND
-
-        df = df[['StockName', 'Type']]
-        frames.append(df)
+    for ticker_symbol in STOCKS:
+        print(f"Ophalen van: {ticker_symbol}...")
         
-    return pd.concat(frames, ignore_index=True)
+        # 1. Info ophalen (Naam en Type)
+        t = yf.Ticker(ticker_symbol)
+        name = t.info.get('longName', 'Unknown')
+        quote_type = t.info.get('quoteType', 'Unknown')
+        
+        # 2. Historische data ophalen
+        hist = t.history(start=start_date)
+        
+        if hist.empty:
+            continue
+            
+        # 3. Index resetten om de datum kolom te krijgen
+        hist = hist.reset_index()
+        
+        # 4. Kolommen toevoegen die specifiek zijn voor deze stock
+        hist['Ticker'] = ticker_symbol
+        hist['StockName'] = name
+        hist['Type'] = quote_type
+        
+        # 5. DateKey maken (YYYYMMDD als int)
+        hist['DateKey'] = pd.to_datetime(hist['Date']).dt.strftime('%Y%m%d').astype(int)
+        
+        # Toevoegen aan onze verzamellijst
+        all_data.append(hist)
 
-
+    # Combineer alle losse DataFrames onder elkaar
+    df = pd.concat(all_data, ignore_index=True)
+    
+    # Selecteer en sorteer alleen de kolommen die jij wilde
+    df.rename(columns={
+        'Ticker' : 'StockKey'
+    },inplace=True)
+    
+    dimStock = df[['StockKey', 'StockName', 'Type']].drop_duplicates(subset=['StockKey'])    
+    factMarketData = df[['DateKey', 'Close', 'High', 'Low', 'Open', 'Volume']]
+    return dimStock,factMarketData

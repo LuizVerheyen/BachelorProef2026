@@ -85,9 +85,9 @@ END
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'DimStock')
 BEGIN
     CREATE TABLE DimStock (
-        StockKey    INT IDENTITY (1,1) PRIMARY KEY,
+        StockKey    VARCHAR(10) PRIMARY KEY,
         StockName   VARCHAR(100),
-        TypeOfStock VARCHAR(50)
+        [Type] VARCHAR(50)
     );
 END
 
@@ -145,39 +145,16 @@ BEGIN
         DateKey                 INT,
         USD                     DECIMAL(18, 4),
         OIL                     DECIMAL(18, 4),
-        GS10                    DECIMAL(18, 4),
-        GS10_MoM                DECIMAL(18, 4),
-        GS10_YoY                DECIMAL(18, 4),
-        GS2                     DECIMAL(18, 4),
-        GS2_MoM                 DECIMAL(18, 4),
-        GS2_YoY                 DECIMAL(18, 4),
-        GDP                     DECIMAL(18, 4),
-        GDP_MoM                 DECIMAL(18, 4),
-        GDP_YoY                 DECIMAL(18, 4),
         CPI                     DECIMAL(18, 4),
-        CPI_MoM                 DECIMAL(18, 4),
-        CPI_YoY                 DECIMAL(18, 4),
-        Unemployment            DECIMAL(18, 4),
-        Unemployment_MoM        DECIMAL(18, 4),
-        Unemployment_YoY        DECIMAL(18, 4),
-        PPI                     DECIMAL(18, 4),
-        PPI_MoM                 DECIMAL(18, 4),
-        PPI_YoY                 DECIMAL(18, 4),
-        Personal_Income         DECIMAL(18, 4),
-        Personal_Income_MoM     DECIMAL(18, 4),
-        Personal_Income_YoY     DECIMAL(18, 4),
+        VIX                     DECIMAL(18, 4),
+        YieldSpread             DECIMAL(18, 4),
+        InfExpectation          DECIMAL(18, 4),
+        FinStress               DECIMAL(18, 4),
         FedFundsRate            DECIMAL(18, 4),
-        FedFundsRate_MoM        DECIMAL(18, 4),
-        FedFundsRate_YoY        DECIMAL(18, 4),
-        Labor_Participation     DECIMAL(18, 4),
-        Labor_Participation_MoM DECIMAL(18, 4),
-        Labor_Participation_YoY DECIMAL(18, 4),
-        Employment              DECIMAL(18, 4),
-        Employment_MoM          DECIMAL(18, 4),
-        Employment_YoY          DECIMAL(18, 4),
+        FedBalanceSheet         DECIMAL(18, 4),
+        CPI                     DECIMAL(18, 4),
+        PPI                     DECIMAL(18, 4),
         Consumer_Confidence     DECIMAL(18, 4),
-        Consumer_Confidence_MoM DECIMAL(18, 4),
-        Consumer_Confidence_YoY DECIMAL(18, 4),
         FOREIGN KEY (DateKey) REFERENCES DimDate(DateKey)
     );
 END
@@ -191,6 +168,7 @@ BEGIN
         Headline    VARCHAR(MAX),
         Abstract    VARCHAR(MAX),
         Section     VARCHAR(100),
+        [URL] VARCHAR(2048)
         FOREIGN KEY (DateKey)   REFERENCES DimDate(DateKey),
         FOREIGN KEY (SourceKey) REFERENCES DimSource(SourceKey)
     );
