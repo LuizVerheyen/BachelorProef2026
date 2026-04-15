@@ -1,266 +1,56 @@
-import undetected_chromedriver as uc
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.action_chains import ActionChains
-from bs4 import BeautifulSoup
-import time
-import random
 import pandas as pd
-from datetime import datetime
-from dateutil.relativedelta import relativedelta
-import pytz
+from pathlib import Path
+import sys
+from database.connectie.connectie import getData,get_engine
 
-# Importeer jouw database functies
-from database.connectie.connectie import get_engine, getData, loadIN
+ROOT = Path().resolve()
+sys.path.append(str(ROOT))
 
-# ==============================================================================
-# HELPERS
-# ==============================================================================
+engine = get_engine()
 
-def date_to_key(date_str):
-    """Zet '2024-03-21 14:00' om naar DateKey '20240321'."""
-    try:
-        return date_str[:10].replace('-', '')
-    except:
-        return None
+df = pd.read_csv(ROOT / "data" / "processed" / "trump_tweets.csv")
 
-def load_seen_urls_from_db(engine, table="stg_Twitter"):
-    """Haalt TweetID's op uit de database om dubbele scrapes te voorkomen."""
-    query = f"SELECT DISTINCT TweetID FROM {table}"
-    try:
-        df = getData(engine, query)
-        if df is not None and not df.empty:
-            return set(df['TweetID'].dropna().tolist())
-    except Exception:
-        pass
-    return set()
+df[['likes', 'comments', 'reposts']] = df[['likes', 'comments', 'reposts']].astype(int)
 
-def bypass_cloudflare(driver):
-    """Probeert door de Cloudflare 'Turnstile' muur te breken."""
-    try:
-        time.sleep(5)
-        if "Cloudflare" in driver.title or "Just a moment" in driver.title:
-            print("🛡️ Cloudflare gedetecteerd. Poging tot interactie...")
-            iframes = driver.find_elements(By.TAG_NAME, "iframe")
-            for index, iframe in enumerate(iframes):
-                try:
-                    actions = ActionChains(driver)
-                    actions.move_to_element(iframe).pause(random.uniform(0.1, 0.5)).click().perform()
-                    print(f"✅ Geklikt op verificatie-element {index}")
-                    time.sleep(7)
-                    break
-                except:
-                    continue
-    except Exception as e:
-        print(f"⚠️ Cloudflare bypass mislukt: {e}")
+def dimTwitterUser():
+    return pd.DataFrame(df['username'].unique(), columns=['UserName'])
 
-def get_stat_by_label(post_container, label_text):
+    
+def dimTwitter():
     """
-    Haal statistiek op via label (ReTruths / Likes).
-    Zoekt de div met die tekst, gaat naar parent, pakt de <p> waarde.
+    df: DataFrame met de nieuwe tweets (bevat kolom 'UserName', 'DateKey', 'Text')
+    engine: De SQLAlchemy engine connectie naar je SSMS database
     """
-    try:
-        label_div = post_container.find_element(By.XPATH, f".//div[text()='{label_text}']")
-        parent_container = label_div.find_element(By.XPATH, "./..")
-        count = parent_container.find_element(By.TAG_NAME, "p").text
-        return count.strip() if count else "0"
-    except:
-        return "0"
-
-def get_replies_stat(post_container):
-    """Haal replies op via de <p> die 'replies' bevat."""
-    try:
-        replies_p = post_container.find_element(By.XPATH, ".//p[contains(text(), 'replies')]")
-        return replies_p.text.split()[0].strip()
-    except:
-        return "0"
-
-def get_original_link_and_stats(driver, wait, trumpstruth_url):
-    """
-    1. Ga naar de trumpstruth.org detailpagina
-    2. Volg de link naar Truth Social
-    3. Scrape ReTruths, Likes, Replies
-    """
-    try:
-        # --- Stap 1: trumpstruth.org detailpagina ---
-        driver.get(trumpstruth_url)
-        bypass_cloudflare(driver)  # ← FIX: was eerder weggelaten
-
-        try:
-            link_element = wait.until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div.status-header__right a"))
-            )
-            original_link = link_element.get_attribute("href")
-        except:
-            driver.save_screenshot(f"debug_no_link_{int(time.time())}.png")
-            print(f"❌ Geen originele link gevonden voor: {trumpstruth_url}")
-            return {"retruths": "0", "likes": "0", "replies": "0"}
-
-        if not original_link:
-            return {"retruths": "0", "likes": "0", "replies": "0"}
-
-        print(f"🔗 Originele link: {original_link}")
-
-        # --- Stap 2: Truth Social pagina ---
-        driver.get(original_link)
-        bypass_cloudflare(driver)  # ← FIX: Cloudflare ook hier checken
-
-        # ← FIX: scrollen zodat lazy-loaded stats worden getriggerd
-        driver.execute_script("window.scrollTo(0, 500);")
-        time.sleep(random.uniform(2, 4))  # ← FIX: menselijke pauze na scrollen
-
-        # Wacht tot stats zichtbaar zijn
-        wait.until(
-            EC.presence_of_element_located(
-                (By.XPATH, "//*[contains(text(), 'Likes') or contains(text(), 'replies')]")
-            )
-        )
-
-        body = driver.find_element(By.TAG_NAME, "body")
-        retruths = get_stat_by_label(body, "ReTruths")
-        likes    = get_stat_by_label(body, "Likes")
-        replies  = get_replies_stat(body)
-
-        print(f"📊 ReTruths: {retruths} | Likes: {likes} | Replies: {replies}")
-        return {"retruths": retruths, "likes": likes, "replies": replies}
-
-    except Exception as e:
-        print(f"❌ Fout bij stats ophalen ({trumpstruth_url}): {e}")
-        driver.save_screenshot(f"debug_stats_error_{int(time.time())}.png")
-        return {"retruths": "0", "likes": "0", "replies": "0"}
-
-def create_driver(headless=True):
-    options = uc.ChromeOptions()
-    if headless:
-        options.add_argument('--headless')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('--window-size=1920,1080')
-    options.add_argument('--disable-blink-features=AutomationControlled')
-    options.add_argument(
-        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
+    
+    # 1. Haal de koppeltabel op uit de database (ID's en Usernames)
+    query = "SELECT UserID, UserName FROM DimTwitterUsers"
+    df_users = pd.read_sql(query, engine)
+    df_users.rename(columns={
+        "UserName": "username"
+    },inplace=True)
+    print(df_users.head())
+    print(df.head())
+    
+    # 2. Gebruik een 'merge' om de UserID bij de juiste UserName in je df te plakken
+    # Dit werkt exact als een SQL JOIN
+    df_merged = pd.merge(
+        df, 
+        df_users, 
+        on='username', 
+        how='left'
     )
-    return uc.Chrome(version_main=146, options=options)
+    print(df_merged.head())
+    
+    # 3. Optioneel: Controleer op nieuwe gebruikers die nog niet in DimTwitterUsers staan
+    # Als UserID NaN (null) is, betekent dit dat de gebruiker nog niet in de DB staat.
+    if df_merged['UserID'].isnull().any():
+        print("Waarschuwing: Sommige gebruikers zijn onbekend en krijgen geen ID.")
 
-# ==============================================================================
-# FASES
-# ==============================================================================
+    # 4. Geef alleen de gewenste kolommen terug voor DimTwitter
+    return df_merged[['DateKey', 'UserID', 'Text']]
 
-def scrape_search_phase(start_date_str, seen_urls):
-    current_start = datetime.strptime(start_date_str, "%Y-%m-%d")
-    final_end_date = datetime.now()
-    driver = create_driver(headless=True)
-    new_records = []
+# Gebruik:
+# df_dim_twitter = dimTwitter(raw_data_df, engine)
 
-    try:
-        while current_start < final_end_date:
-            current_end = current_start + relativedelta(months=1)
-            s_str, e_str = current_start.strftime("%Y-%m-%d"), current_end.strftime("%Y-%m-%d")
-            page_num = 1
-            while True:
-                url = (
-                    f"https://trumpstruth.org/search?query=&start_date={s_str}"
-                    f"&end_date={e_str}&sort=date_desc&removed=include&per_page=100&page={page_num}"
-                )
-                print(f"🔍 Scraping: {s_str} → {e_str} | Pagina {page_num}")
-                driver.get(url)
-
-                try:
-                    WebDriverWait(driver, 10).until(
-                        EC.presence_of_element_located((By.CLASS_NAME, "search-result"))
-                    )
-                    soup = BeautifulSoup(driver.page_source, 'html.parser')
-                    posts = soup.find_all('div', class_='search-result')
-                    if not posts:
-                        break
-
-                    new_on_page = 0
-                    for post in posts:
-                        post_url = post.get('data-status-url', '')
-                        if not post_url or post_url in seen_urls:
-                            continue
-
-                        user_el = post.find('a', class_='status-info__meta-item')
-                        if not user_el or "@realdonaldtrump" not in user_el.get_text(strip=True).lower():
-                            continue
-
-                        meta = post.find_all('a', class_='status-info__meta-item')
-                        date_raw = meta[1].get_text(strip=True) if len(meta) > 1 else ""
-                        content_div = post.find('div', class_='snippet-clean-content')
-                        is_deleted = 1 if post.find('span', class_='status__deleted-badge') else 0
-
-                        record = {
-                            'TweetID':       post_url,
-                            'UserID':        None,
-                            'DateKey':       date_to_key(date_raw),
-                            'Reposts':       "0",  # ingevuld in fase 2
-                            'Text':          content_div.get_text(strip=True) if content_div else "",
-                            'Replies':       "0",
-                            'Likes':         "0",
-                            'Bookmarks':     None,
-                            'Views':         None,
-                            'InfluenceScore':None,
-                            'Deleted':       is_deleted,
-                        }
-                        new_records.append(record)
-                        seen_urls.add(post_url)
-                        new_on_page += 1
-
-                    if new_on_page == 0 or len(posts) < 100:
-                        break
-                    page_num += 1
-                except:
-                    break
-            current_start = current_end
-    finally:
-        driver.quit()
-    return new_records
-
-
-def enrich_with_stats(records):
-    """
-    Fase 2: bezoek elke Truth Social post en haal de echte statistieken op.
-    Gebruikt headless=False voor betere Cloudflare-bypass.
-    """
-    if not records:
-        return []
-
-    # ← FIX: headless=False is cruciaal — headless wordt sneller geblokkeerd door Cloudflare
-    driver = create_driver(headless=False)
-    wait   = WebDriverWait(driver, 25)
-
-    try:
-        for i, record in enumerate(records):
-            print(f"[{i+1}/{len(records)}] 🌐 Stats ophalen voor: {record['TweetID']}")
-            stats = get_original_link_and_stats(driver, wait, record['TweetID'])
-
-            record['Reposts'] = stats.get('retruths', '0')
-            record['Likes']   = stats.get('likes',    '0')
-            record['Replies'] = stats.get('replies',  '0')
-
-            # ← FIX: langere pauze, anders ban je IP sneller
-            time.sleep(random.uniform(5, 10))
-    finally:
-        driver.quit()
-    return records
-
-# ==============================================================================
-# ENTRY POINT
-# ==============================================================================
-
-def run_historical(start_date_str="2022-02-01"):
-    print(f"📚 Historische run gestart vanaf {start_date_str}")
-    engine = get_engine()
-
-    seen_urls   = load_seen_urls_from_db(engine, table='stg_Twitter')
-    new_records = scrape_search_phase(start_date_str, seen_urls)
-
-    if new_records:
-        print(f"\n🔎 {len(new_records)} nieuwe posts gevonden. Stats ophalen...")
-        enriched_data = enrich_with_stats(new_records)
-        return pd.DataFrame(enriched_data)
-    else:
-        print("Geen nieuwe posts gevonden.")
-        return pd.DataFrame()
+def factTwitter():
+    return(df[['likes', 'comments', 'reposts']])

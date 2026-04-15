@@ -40,7 +40,7 @@ def loadIN(engine, df=None, table=None, if_exists='append'):
         raise ValueError("df en table zijn verplicht")
     
     # Automatisch veilige chunksize berekenen
-    max_params = 2100
+    max_params = 1000
     num_cols = len(df.columns)
     safe_chunksize = max(1, (max_params // num_cols) - 1)
     

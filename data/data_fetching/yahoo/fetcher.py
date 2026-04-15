@@ -1,24 +1,40 @@
-# %%
-import yfinance as yf;
+import yfinance as yf
+from datetime import datetime
+import pandas as pd
 
-def sp500Fetcher():
+STOCKS = ['^GSPC', 'LMT', 'CVX', 'XOM', 'XLE', 'GLD', '^BFX', 'ABI.BR', 'UCB.BR', 'KBC.BR']
 
-    # %%
-    start_date = '2016-01-01'
+def fetchStocks(start_date='2016-01-01'):
+    frames = []
 
-    # %%
-    sp500 = yf.download(tickers="^GSPC", start=start_date)
+    for stock in STOCKS:
+        df = yf.download(tickers=stock, start=start_date, progress=False, auto_adjust=True)
+        df = df.reset_index()
+        df.columns = ['Date','Close', 'High', 'Low', 'Open', 'Volume']
+        df['DateKey'] = df['Date'].astype(str).str.replace('-', '').astype(int)
+        df.drop(columns=['Date'], inplace=True)
+        df['Ticker'] = stock
+        frames.append(df)
 
-    # %%
-    sp500 = sp500.reset_index()
+    return pd.concat(frames, ignore_index=True)
 
-    # %%
-    sp500.columns = ['Date', 'Close', 'High', 'Low', 'Open', 'Volume']
 
-    # %%
-    sp500['DateKey'] = sp500['Date'].astype(str).str.replace('-', '').astype(int)
-    sp500.drop(columns=['Date'], inplace=True)
 
-    return sp500
+
+def DimStock(stocks=STOCKS):
+    ticker = yf.Ticker(stock)
+    info = ticker.info
+    frames = []
+
+    for stock in stocks:
+        df = yf.download(tickers=stock, start=datetime.now().strftime("%Y-%m-%d"), progress=False)
+        df = df.reset_index()
+        df['StockName'] = info.get('longName', info.get('shortName', 'Unknown'))
+        df['Type']      = info.get('quoteType', 'Unknown')  # bijv. ETF, EQUITY, INDEX, MUTUALFUND
+
+        df = df[['StockName', 'Type']]
+        frames.append(df)
+        
+    return pd.concat(frames, ignore_index=True)
 
 
