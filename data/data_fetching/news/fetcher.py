@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 import re
 from pathlib import Path
 import sys
-
+from database.connectie.connectie import get_engine,getData
 ROOT = Path().resolve()
 sys.path.append(str(ROOT))
 
@@ -69,37 +69,42 @@ SECTIONS = ["Business Day", "Health", "Education", "Science", "Blogs",
             "World", "Your Money", "Technology", "Job Market"]
 
 
-def factNews():
+def factNews(engine):
     if not API_KEY:
         print("Geen API key gevonden in .env bestand.")
         return
+
+    # Haal SourceKey op uit de database via getData
+    result = getData(engine, "SELECT SourceKey FROM DimSource WHERE SourceName = 'New York Times'")
+    if result is None or result.empty:
+        print("New York Times niet gevonden in DimSource.")
+        return
+    source_key = result.iloc[0]['SourceKey']
 
     START_YEAR = 2016
     CURRENT_YEAR = datetime.now().year
     CURRENT_MONTH = datetime.now().month
 
-
     keyword_patterns = [
         re.compile(rf"\b{re.escape(word)}\b", re.IGNORECASE)
         for word in KEYWORDS
     ]
-    
-    FILENAME = f"nyt_data.csv"
+
+    FILENAME = "nyt_data.csv"
 
     for year in range(START_YEAR, CURRENT_YEAR + 1):
         year_data = []
         seen_headlines = set()
         end_month = CURRENT_MONTH if year == CURRENT_YEAR else 12
         print(f"Doing Year: {year}")
+
         for month in range(1, end_month + 1):
             url = f"https://api.nytimes.com/svc/archive/v1/{year}/{month}.json?api-key={API_KEY}"
             print(f"Month: {month}")
             try:
-                # De ENIGE API call voor deze maand
                 response = requests.get(url, timeout=30)
 
                 if response.status_code == 200:
-
                     data = response.json()
                     articles = data.get('response', {}).get('docs', [])
 
@@ -117,6 +122,7 @@ def factNews():
                             seen_headlines.add(headline)
                             year_data.append({
                                 'DateKey': art.get('pub_date'),
+                                'SourceKey': source_key,
                                 'Headline': headline,
                                 'Abstract': art.get('abstract'),
                                 'Section': section,
@@ -128,11 +134,8 @@ def factNews():
             except Exception as e:
                 print(f"Kritieke fout bij {year}-{month}: {e}")
 
-            # Cruciaal: NYT staat 5 requests per minuut toe. 
-            # 60 seconden / 5 = 12 seconden per request.
             time.sleep(12)
 
-        # Opslaan per jaar
         if year_data:
             df = pd.DataFrame(year_data)
             df['DateKey'] = pd.to_datetime(df['DateKey'], format='ISO8601').dt.strftime('%Y%m%d').astype(int)
@@ -140,9 +143,8 @@ def factNews():
             print(f"SUCCES: {FILENAME} opgeslagen ({len(df)} artikelen)")
         else:
             print(f"Geen data gevonden voor jaar {year}")
-            
-    return df
 
+    return df
 
 def dimSource():
     df = pd.read_csv(ROOT / 'data' / 'processed' / 'news' / 'bias_rating_processed.csv')
@@ -154,3 +156,4 @@ def dimSource():
     }, inplace=True)
     
     return df
+

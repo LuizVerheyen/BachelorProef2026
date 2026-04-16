@@ -76,9 +76,11 @@ BEGIN
         TweetID         INT IDENTITY (1,1) PRIMARY KEY,
         UserID          INT,
         DateKey         INT,
+        TimeKey         INT,
         [Text]            VARCHAR(MAX)
         FOREIGN KEY (UserID)  REFERENCES DimTwitterUsers(UserID),
-        FOREIGN KEY (DateKey) REFERENCES DimDate(DateKey)
+        FOREIGN KEY (DateKey) REFERENCES DimDate(DateKey),
+        FOREIGN KEY (TimeKey) REFERENCES DimTime(TimeKey)
     );
 END
 
@@ -110,14 +112,12 @@ IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'FactTwitter')
 BEGIN
     CREATE TABLE FactTwitter (
         TweetID     INT,
-        UserID      INT,
         Comments    INT,
         Likes       INT,
         Reposts     INT,
         -- Views       INT, kan niet voor truthsocial
         CONSTRAINT PK_FactTwitter PRIMARY KEY (tweetID),
         FOREIGN KEY (TweetID) REFERENCES DimTwitter(TweetID),
-        FOREIGN KEY (UserID)  REFERENCES DimTwitterUsers(UserID),
     );
 END
 

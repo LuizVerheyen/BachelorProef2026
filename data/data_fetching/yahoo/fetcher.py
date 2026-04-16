@@ -44,5 +44,5 @@ def fetch_stocks_to_long_format(start_date='2016-01-01'):
     },inplace=True)
     
     dimStock = df[['StockKey', 'StockName', 'Type']].drop_duplicates(subset=['StockKey'])    
-    factMarketData = df[['DateKey', 'Close', 'High', 'Low', 'Open', 'Volume']]
+    factMarketData = df[['DateKey', 'StockKey', 'Close', 'High', 'Low', 'Open', 'Volume']]
     return dimStock,factMarketData
