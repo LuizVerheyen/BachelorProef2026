@@ -77,7 +77,8 @@ BEGIN
         UserID          INT,
         DateKey         INT,
         TimeKey         INT,
-        [Text]            VARCHAR(MAX)
+        [Text]          VARCHAR(MAX),
+        [url]           VARCHAR(2048)
         FOREIGN KEY (UserID)  REFERENCES DimTwitterUsers(UserID),
         FOREIGN KEY (DateKey) REFERENCES DimDate(DateKey),
         FOREIGN KEY (TimeKey) REFERENCES DimTime(TimeKey)

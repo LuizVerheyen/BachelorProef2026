@@ -1,15 +1,13 @@
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 import time
 import random
-import os
 import re
-import gc
-import threading
 import subprocess
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -17,16 +15,14 @@ import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.action_chains import ActionChains
 
-# ==============================================================================
-# GLOBALE CONFIGURATIE
-# ==============================================================================
 ET_TZ = pytz.timezone('US/Eastern')
 BE_TZ = pytz.timezone('Europe/Brussels')
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
 
 # ==============================================================================
-# HELPERS & SCRAPER LOGICA (STAP 1)
+# STAP 1 — Basis scrape (requests, sequentieel — paginering vereist dit)
 # ==============================================================================
 
 def parse_date_time_to_be(raw_date_str):
@@ -38,36 +34,43 @@ def parse_date_time_to_be(raw_date_str):
     except:
         return None, None
 
-def get_base_data(start_date='2026-04-14'):
+
+def get_base_data(start_date, existing_urls=None):
     session = requests.Session()
     retry = Retry(total=3, backoff_factor=2, status_forcelist=[429, 500, 502, 503])
     session.mount('https://', HTTPAdapter(max_retries=retry))
     session.headers.update({'User-Agent': USER_AGENT})
-    
+
     end_date = datetime.now().strftime("%Y-%m-%d")
     all_data = []
     page = 1
-    
-    print(f"🚀 Start scraping vanaf {start_date}...")
+    existing_urls = existing_urls or set()
+
+    print(f"🚀 Start scraping vanaf {start_date}... ({len(existing_urls)} bekende URLs)")
     while True:
         url = (f'https://trumpstruth.org/search?query=&start_date={start_date}'
                f'&end_date={end_date}&sort=date_desc&removed=include'
                f'&per_page=100&page={page}')
-        
         try:
             r = session.get(url, timeout=15)
             r.raise_for_status()
             soup = BeautifulSoup(r.text, 'html.parser')
             posts = soup.find_all('div', class_='search-result')
-            
-            if not posts: break
 
+            if not posts:
+                break
+
+            new_on_page = 0
             for post in posts:
                 user_el = post.find('a', class_='status-info__meta-item')
                 if not user_el or "@realdonaldtrump" not in user_el.text.strip().lower():
                     continue
 
                 post_url = post.get('data-status-url')
+                if post_url in existing_urls:
+                    continue
+
+                new_on_page += 1
                 meta_items = post.find_all('a', class_='status-info__meta-item')
                 date_key, time_key = (None, None)
                 if len(meta_items) > 1:
@@ -79,176 +82,354 @@ def get_base_data(start_date='2026-04-14'):
                     'Username': "realDonaldTrump",
                     'DateKey': date_key,
                     'TimeKey': time_key,
-                    'Text': post.find("div", class_='snippet-clean-content').text.strip() if post.find("div", class_='snippet-clean-content') else "",
+                    'Text': post.find("div", class_='snippet-clean-content').text.strip()
+                             if post.find("div", class_='snippet-clean-content') else "",
                     'deleted': 1 if post.find("div", class_='status__deleted-badge-wrap') else 0,
                     'Likes': None, 'Reposts': None, 'Comments': None
                 })
-            
-            if len(posts) < 100: break
+
+            if new_on_page == 0:
+                print(f"✅ Geen nieuwe posts meer op pagina {page}, stoppen.")
+                break
+            if len(posts) < 100:
+                break
             page += 1
             time.sleep(random.uniform(0.5, 1.2))
+
         except Exception as e:
             print(f"❌ Fout op pagina {page}: {e}")
             break
-            
-    return pd.DataFrame(all_data)
+
+
+    df = pd.DataFrame(all_data)
+
+    print(f"✅ {len(df)} nieuwe posts gevonden.")
+    print(f"{len(df[df['Text'] == ''])} Tweets gevonden zonder Text -> Deleting them 🧑‍💻")
+    df = df[df['Text'].notna() & (df['Text'].str.strip() != "") & (df['deleted'] == 0)].reset_index(drop=True)
+    print(f"{len(df)} overgebleven tweets ✅")
+    return df
+
 
 # ==============================================================================
-# ENRICHMENT LOGICA (STAP 2 & 3 - SELENIUM & URLS)
+# STAP 2 — Originele URLs ophalen (requests + BS4, wél parallel)
 # ==============================================================================
 
-thread_local = threading.local()
+# Thread-local session zodat elke thread zijn eigen verbinding heeft
+_thread_local = threading.local()
 
-def get_session():
-    if not hasattr(thread_local, 'session'):
+def _get_session():
+    if not hasattr(_thread_local, 'session'):
         s = requests.Session()
+        retry = Retry(total=3, backoff_factor=2, status_forcelist=[429, 500, 502, 503])
+        s.mount('https://', HTTPAdapter(max_retries=retry))
         s.headers.update({'User-Agent': USER_AGENT})
-        thread_local.session = s
-    return thread_local.session
+        _thread_local.session = s
+    return _thread_local.session
 
-def fetch_orig_url_task(args):
+
+def _fetch_original_url(args):
+    """Één taak: haal de original_url op voor één trumpstruth-URL via requests."""
     index, url = args
     try:
-        r = get_session().get(url, timeout=10)
+        r = _get_session().get(url, timeout=10)
+        r.raise_for_status()
         soup = BeautifulSoup(r.text, 'html.parser')
         link = soup.select_one("td.status-details-table__value a")
-        return index, (link['href'] if link else None)
-    except:
+        if link and link.get('href'):
+            return index, link['href']
         return index, None
+    except Exception as e:
+        print(f"  ⚠️ [{index}] requests-fetch mislukt: {e}")
+        return index, None
+
+
+def get_original_urls_parallel(df, max_workers=8):
+    """
+    Haalt original_urls op via requests + BeautifulSoup, parallel.
+    Als requests niets vindt (JS-only pagina), valt het terug op None —
+    die worden dan in stap 3 via Selenium geprobeerd.
+    """
+    print(f"🔗 Originele URLs ophalen via requests ({max_workers} threads)...")
+    tasks = [(i, row['url']) for i, row in df.iterrows() if row['url']]
+
+    with ThreadPoolExecutor(max_workers=max_workers) as exe:
+        futures = {exe.submit(_fetch_original_url, task): task[0] for task in tasks}
+        for future in as_completed(futures):
+            try:
+                index, original_url = future.result()
+                df.at[index, 'original_url'] = original_url
+                if original_url:
+                    print(f"  ✅ [{index}] {original_url}")
+                else:
+                    print(f"  ⚠️ [{index}] Niet gevonden via requests, fallback naar Selenium")
+            except Exception as e:
+                print(f"  ❌ Fout in future: {e}")
+
+    gevonden   = df['original_url'].notna().sum()
+    niet_gevonden = df['original_url'].isna().sum()
+    print(f"  📊 {gevonden} gevonden via requests, {niet_gevonden} vallen terug op Selenium")
+    return df
+
+
+# ==============================================================================
+# SELENIUM HELPERS
+# ==============================================================================
 
 def create_driver():
     options = uc.ChromeOptions()
-    options.add_argument('--headless=new')
+    options.add_argument("--headless=new")
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--disable-gpu')
+    options.add_argument('--window-size=1920,1080')
+    options.add_argument('--disable-blink-features=AutomationControlled')
     options.add_argument(f'--user-agent={USER_AGENT}')
     try:
-        driver = uc.Chrome(options=options)
-        return driver
-    except:
+        return uc.Chrome(options=options)
+    except Exception as e:
+        print(f"⚠️ Driver aanmaken mislukt: {e}")
         return None
 
+
+def bypass_cloudflare(driver):
+    try:
+        if "Cloudflare" in driver.title or "Just a moment" in driver.title:
+            print("🛡️ Cloudflare gedetecteerd, poging tot bypass...")
+            time.sleep(2)
+            for iframe in driver.find_elements(By.TAG_NAME, "iframe"):
+                try:
+                    ActionChains(driver)\
+                        .move_to_element(iframe)\
+                        .pause(random.uniform(0.2, 0.5))\
+                        .click()\
+                        .perform()
+                    time.sleep(7)
+                    break
+                except:
+                    continue
+    except Exception as e:
+        print(f"⚠️ Cloudflare bypass mislukt: {e}")
+
+
 def parse_truth_num(text):
-    if not text: return 0
-    clean = text.lower().replace('replies', '').replace('likes', '').replace('retruths', '').strip()
+    if not text:
+        return 0
+    clean = text.lower()\
+                .replace('replies', '')\
+                .replace('likes', '')\
+                .replace('retruths', '')\
+                .strip()
     mult = 1000 if 'k' in clean else 1
     try:
         num = re.sub(r'[^\d.]', '', clean.replace('k', ''))
         return int(float(num) * mult)
-    except: return 0
+    except:
+        return 0
 
-def fetch_meta_task(args):
-    index, orig_url = args
-    if not orig_url: return index, 0, 0, 0
-    
-    if not hasattr(thread_local, 'driver') or thread_local.driver is None:
-        thread_local.driver = create_driver()
-        thread_local.count = 0
-    
-    driver = thread_local.driver
-    thread_local.count += 1
-    
-    if thread_local.count % 40 == 0:
-        driver.quit()
-        thread_local.driver = create_driver()
-        driver = thread_local.driver
-
-    try:
-        driver.get(orig_url)
-        wait = WebDriverWait(driver, 7)
-        wait.until(EC.presence_of_element_located((By.XPATH, "//*[contains(text(),'Likes')]")))
-        
-        l = parse_truth_num(driver.find_element(By.XPATH, "//div[text()='Likes']/preceding-sibling::p").text)
-        r = parse_truth_num(driver.find_element(By.XPATH, "//div[text()='ReTruths']/preceding-sibling::p").text)
-        c = parse_truth_num(driver.find_element(By.XPATH, "//p[contains(text(),'replies')]").text)
-        return index, l, r, c
-    except: return index, 0, 0, 0
 
 # ==============================================================================
-# PIPELINE FUNCTIE VOOR INITIATOR
+# STAP 2b — Fallback via Selenium voor URLs die requests niet kon ophalen
 # ==============================================================================
 
-def get_complete_trump_df():
-    df = get_base_data()
-    if df.empty: return df
+def get_original_urls_selenium_fallback(driver, df):
+    """Alleen voor rijen waar requests geen original_url vond."""
+    fallback_rows = df[df['original_url'].isna()]
+    if fallback_rows.empty:
+        print("✅ Geen Selenium-fallback nodig voor originele URLs.")
+        return df
 
-    # STAP 2: Original URLs (FIXED LOOP)
-    print("🔗 Verkrijgen van originele Truth Social URLs...")
-    with ThreadPoolExecutor(max_workers=10) as exe:
-        # Maak een lijst van futures
-        future_to_url = {exe.submit(fetch_orig_url_task, (i, df.at[i, 'url'])): i for i in df.index}
-        
-        for future in as_completed(future_to_url):
-            try:
-                index, original_url = future.result()
-                df.at[index, 'original_url'] = original_url
-            except Exception as e:
-                print(f"Fout bij ophalen URL: {e}")
+    print(f"🔗 Selenium-fallback voor {len(fallback_rows)} URLs...")
+    for index, row in fallback_rows.iterrows():
+        try:
+            driver.get(row['url'])
+            bypass_cloudflare(driver)
+            wait = WebDriverWait(driver, 10)
+            link_el = wait.until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, "td.status-details-table__value a")
+                )
+            )
+            df.at[index, 'original_url'] = link_el.get_attribute("href")
+            print(f"  ✅ [{index}] {df.at[index, 'original_url']}")
+        except Exception as e:
+            print(f"  ⚠️ [{index}] Ook Selenium-fallback mislukt: {e}")
+            df.at[index, 'original_url'] = None
 
-    # STAP 3: Metadata (FIXED LOOP)
-    print("📊 Metadata scrapen via Selenium...")
-    # Filter rijen die een original_url hebben
-    valid_indices = df[df['original_url'].notna()].index
-    
-    with ThreadPoolExecutor(max_workers=3) as exe:
-        future_to_meta = {exe.submit(fetch_meta_task, (i, df.at[i, 'original_url'])): i for i in valid_indices}
-        
-        for future in as_completed(future_to_meta):
-            try:
-                index, l, r, c = future.result()
-                df.at[index, 'Likes'] = l
-                df.at[index, 'Reposts'] = r
-                df.at[index, 'Comments'] = c
-            except Exception as e:
-                print(f"Fout bij ophalen metadata: {e}")
-    
-    # Cleanup drivers
-    try:
-        subprocess.run(['taskkill', '/F', '/IM', 'chrome.exe'], capture_output=True)
-    except: pass
-    
     return df
 
+
 # ==============================================================================
-# JOUW GEWENSTE OUTPUT FUNCTIES
+# STAP 3 — Metadata ophalen via Selenium (sequentieel)
 # ==============================================================================
 
-_global_df_cache = None
+def get_metadata(driver, df):
+    print("📊 Metadata scrapen via Selenium...")
+    count = 0
 
-def get_cached_df():
-    global _global_df_cache
-    if _global_df_cache is None:
-        _global_df_cache = get_complete_trump_df()
-    return _global_df_cache
+    for index, row in df.iterrows():
+        orig_url = row.get('original_url')
+        if not orig_url:
+            df.at[index, 'Likes']    = 0
+            df.at[index, 'Reposts']  = 0
+            df.at[index, 'Comments'] = 0
+            continue
 
-df = get_cached_df()
+        count += 1
+        if count % 40 == 0:
+            print("🔄 Driver herstarten na 40 requests...")
+            try:
+                driver.quit()
+            except:
+                pass
+            driver = create_driver()
+            if driver is None:
+                print("❌ Nieuwe driver aanmaken mislukt, stoppen.")
+                break
 
-def dimTwitterUser():
-    return df[['Username']].drop_duplicates().reset_index(drop=True)
+        try:
+            driver.get(orig_url)
+            bypass_cloudflare(driver)
 
-def dimTwitter(engine):
-    print(df.columns)
-    query = "SELECT UserID, UserName FROM DimTwitterUsers"
-    df_users = pd.read_sql(query,engine)
-    print(df.head())
-    print(df.columns)
-    merged_df = df.merge(
-        df_users, 
-        left_on="Username", 
-        right_on="UserName", 
-        how='inner'
+            wait = WebDriverWait(driver, 10)
+            wait.until(EC.presence_of_element_located(
+                (By.XPATH, "//*[contains(text(),'Likes') or contains(text(),'replies')]")
+            ))
+
+            try:
+                likes = parse_truth_num(
+                    driver.find_element(By.XPATH, "//div[text()='Likes']/preceding-sibling::p").text
+                )
+            except:
+                likes = 0
+
+            try:
+                reposts = parse_truth_num(
+                    driver.find_element(By.XPATH, "//div[text()='ReTruths']/preceding-sibling::p").text
+                )
+            except:
+                reposts = 0
+
+            try:
+                comments = parse_truth_num(
+                    driver.find_element(By.XPATH, "//p[contains(text(),'replies')]").text
+                )
+            except:
+                comments = 0
+
+            df.at[index, 'Likes']    = likes
+            df.at[index, 'Reposts']  = reposts
+            df.at[index, 'Comments'] = comments
+            print(f"  ✅ [{index}] L={likes} R={reposts} C={comments}")
+
+        except Exception as e:
+            print(f"  ⚠️ [{index}] Metadata mislukt: {e}")
+            print(df.loc[index])
+            df.at[index, 'Likes']    = 0
+            df.at[index, 'Reposts']  = 0
+            df.at[index, 'Comments'] = 0
+
+    return driver, df
+
+
+# ==============================================================================
+# HOOFD PIPELINE
+# ==============================================================================
+
+def get_twitter_tables(engine, daily=False):
+    # Stap 0 — bestaande URLs ophalen
+    existing_urls = set()
+    if engine is not None:
+        try:
+            from database.connectie.connectie import getData
+            existing = getData(engine, "SELECT [url] FROM DimTwitter")
+            if existing is not None and not existing.empty:
+                existing_urls = set(existing['url'].dropna().tolist())
+                print(f"📋 {len(existing_urls)} bestaande tweets in DB")
+        except Exception as e:
+            print(f"⚠️ Kon bestaande URLs niet ophalen: {e}")
+
+    start_date = (
+        (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        if daily else '2021-02-01'
     )
-    print(merged_df.columns)
-    return merged_df[["DateKey", "TimeKey", 'url', 'Text', 'UserID']].reset_index(drop=True)
 
-def factTwitter(engine):
-    # Zorg dat de kolommen numeriek zijn voor de database
-    query ="SELECT TweetID, [url] FROM DimTwitter"
-    df_tweets = pd.read_sql(query, engine)
-    print(df_tweets.head())
-    print(df_tweets.columns)
-    
+    # Stap 1 — basis scrape (sequentieel, paginering)
+    df = get_base_data(start_date=start_date, existing_urls=existing_urls)
+    if df.empty:
+        print("✅ Geen nieuwe tweets gevonden.")
+        return pd.DataFrame(), pd.DataFrame()
+
+    # Stap 2 — originele URLs parallel via requests
+    df = get_original_urls_parallel(df, max_workers=8)
+
+    # Selenium alleen opstarten als er iets te doen is
+    selenium_needed = df['original_url'].isna().any()
+    driver = None
+
+    try:
+        if selenium_needed:
+            driver = create_driver()
+            if driver is None:
+                print("❌ Kon geen Chrome-driver aanmaken.")
+                return pd.DataFrame(), pd.DataFrame()
+
+            # Stap 2b — fallback voor URLs die requests niet kon ophalen
+            df = get_original_urls_selenium_fallback(driver, df)
+        else:
+            # Toch driver nodig voor stap 3
+            driver = create_driver()
+            if driver is None:
+                print("❌ Kon geen Chrome-driver aanmaken.")
+                return pd.DataFrame(), pd.DataFrame()
+
+        # Stap 3 — metadata (altijd Selenium, sequentieel)
+        driver, df = get_metadata(driver, df)
+
+    finally:
+        try:
+            if driver:
+                driver.quit()
+        except:
+            pass
+        try:
+            subprocess.run(['taskkill', '/f', '/im', 'chrome.exe'],      capture_output=True)
+            subprocess.run(['taskkill', '/f', '/im', 'chromedriver.exe'], capture_output=True)
+        except:
+            pass
+
+    # Stap 4 — dim_df bouwen
+    df_users = pd.read_sql("SELECT UserID, UserName FROM DimTwitterUsers", engine)
+    merged   = df.merge(df_users, left_on="Username", right_on="UserName", how='inner')
+    dim_df   = merged[["DateKey", "TimeKey", "url", "Text", "UserID"]].reset_index(drop=True)
+
+    # Stap 5 — fact_raw bouwen
     cols = ['Likes', 'Reposts', 'Comments']
     df[cols] = df[cols].fillna(0).astype(int)
-    merged_df = df.merge(df_tweets, on='url', how='inner')
-    print(merged_df.head())
-    print(merged_df.columns)
-    return merged_df[['Likes', 'Reposts', 'Comments', 'TweetID']].reset_index(drop=True)
+    fact_raw = df[['url'] + cols].copy().reset_index(drop=True)
+
+    return dim_df, fact_raw
+
+
+# ==============================================================================
+# FACT BUILDER
+# ==============================================================================
+
+def build_fact_twitter(engine, fact_raw: pd.DataFrame) -> pd.DataFrame:
+    if fact_raw.empty:
+        return pd.DataFrame()
+
+    fact_raw  = fact_raw.drop_duplicates(subset=['url'])
+    df_tweets = pd.read_sql("SELECT TweetID, [url] FROM DimTwitter", engine)
+    merged    = fact_raw.merge(df_tweets, on='url', how='inner')
+    merged    = merged.drop_duplicates(subset=['TweetID'])
+
+    existing_fact = pd.read_sql("SELECT TweetID FROM FactTwitter", engine)
+    if not existing_fact.empty:
+        existing_ids = set(existing_fact['TweetID'].tolist())
+        merged = merged[~merged['TweetID'].isin(existing_ids)]
+
+    if merged.empty:
+        print("✅ Geen nieuwe FactTwitter rijen.")
+        return pd.DataFrame()
+
+    return merged[['TweetID', 'Likes', 'Reposts', 'Comments']].reset_index(drop=True)

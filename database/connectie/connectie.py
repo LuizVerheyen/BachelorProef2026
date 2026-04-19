@@ -42,26 +42,29 @@ def loadIN(engine, df=None, table=None, if_exists='append'):
     # Automatisch veilige chunksize berekenen
     max_params = 1000
     num_cols = len(df.columns)
-    safe_chunksize = max(1, (max_params // num_cols) - 1)
-    
-    try:
-        start = time.time()
-        print(f"⏳ Laden gestart: {len(df)} rijen, {num_cols} kolommen → chunksize: {safe_chunksize}")
+    if num_cols > 0:
+        safe_chunksize = max(1, (max_params // num_cols) - 1)
         
-        df.to_sql(
-            name=table,
-            con=engine,
-            if_exists=if_exists,
-            index=False,
-            chunksize=safe_chunksize,
-            method='multi'
-        )
-        
-        elapsed = round(time.time() - start, 2)
-        print(f"✅ Succes: {len(df)} rijen geladen in '{table}' — {elapsed}s")
-    except Exception as e:
-        print(f"❌ Fout bij laden: {e}")
-        raise e
+        try:
+            start = time.time()
+            print(f"⏳ Laden gestart: {len(df)} rijen, {num_cols} kolommen → chunksize: {safe_chunksize}")
+            
+            df.to_sql(
+                name=table,
+                con=engine,
+                if_exists=if_exists,
+                index=False,
+                chunksize=safe_chunksize,
+                method='multi'
+            )
+            
+            elapsed = round(time.time() - start, 2)
+            print(f"✅ Succes: {len(df)} rijen geladen in '{table}' — {elapsed}s")
+        except Exception as e:
+            print(f"❌ Fout bij laden: {e}")
+            raise e
+    else:
+        print("nothing to load 👌")
 
 # %%
 def getData(engine, query=None):
