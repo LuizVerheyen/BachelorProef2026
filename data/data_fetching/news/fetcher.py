@@ -17,61 +17,13 @@ load_dotenv()
 API_KEY = os.getenv("NYT_API_KEY")
 CSV_PATH = Path(ROOT / "data" / "raw" / "news")
 
-KEYWORDS = [
-        # Macro economie
-        "inflation", "deflation", "interest rates", "rate hike", "rate cut",
-        "recession", "economic slowdown", "gdp", "consumer spending",
-        "unemployment", "job growth", "employment", "wage growth",
-        "housing market", "real estate", "credit", "debt", "liquidity",
-
-        # Centrale banken / beleid
-        "federal reserve", "fed", "ecb", "central bank",
-        "monetary policy", "quantitative easing", "quantitative tightening",
-        "bond yields", "treasury yields",
-
-        # Markt / trading termen
-        "stock market", "stocks", "equities", "bull market", "bear market",
-        "market rally", "market crash", "selloff", "volatility", "correction",
-        "overvalued", "undervalued", "bubble",
-
-        # Bedrijven / earnings
-        "earnings", "earnings report", "revenue", "profit", "guidance",
-        "forecast", "downgrade", "upgrade", "ipo", "merger", "acquisition",
-
-        # Tech / AI
-        "ai", "artificial intelligence", "machine learning", "automation",
-        "semiconductors", "chips", "nvidia", "openai", "cloud computing",
-
-        # Grote namen
-        "elon musk", "tesla", "apple", "microsoft", "amazon", "google", "meta",
-
-        # Politiek / geopolitiek
-        "trump", "biden", "white house", "election",
-        "war", "conflict", "sanctions", "china", "russia", "ukraine",
-        "middle east", "trade war", "tariffs",
-
-        # Grondstoffen
-        "oil", "gold", "commodities", "energy prices", "gas prices",
-
-        # Sentiment
-        "fear", "panic", "uncertainty", "risk", "risk-off", "risk-on",
-        "investor sentiment",
-
-        # Crypto
-        "bitcoin", "crypto", "cryptocurrency", "blockchain",
-
-        # Banken / financiële stress
-        "banking crisis", "bank failure", "liquidity crisis",
-        "credit crunch", "default"
-]
-
 SECTIONS = ["Business Day", "Health", "Education", "Science", "Blogs",
             "U.S.", "New York", "Real Estate", "Washington",
             "World", "Your Money", "Technology", "Job Market"]
 
 
-def _parse_articles(articles, source_key, keyword_patterns, seen_headlines):
-    """Gemeenschappelijke logica om een lijst artikelen te parsen."""
+def _parse_articles(articles, source_key, seen_headlines):
+    """Filter artikelen enkel op sectie, geen keyword filtering."""
     rows = []
     for art in articles:
         headline = art.get('headline', {}).get('main', "").lower()
@@ -81,43 +33,37 @@ def _parse_articles(articles, source_key, keyword_patterns, seen_headlines):
             continue
         if headline in seen_headlines:
             continue
-        if any(p.search(headline) for p in keyword_patterns):
-            seen_headlines.add(headline)
-            rows.append({
-                'DateKey': art.get('pub_date'),
-                'SourceKey': source_key,
-                'Headline': headline,
-                'Abstract': art.get('abstract'),
-                'Section': section,
-                'URL': art.get('web_url')
-            })
+
+        seen_headlines.add(headline)
+        rows.append({
+            'DateKey': art.get('pub_date'),
+            'SourceKey': source_key,
+            'Headline': headline,
+            'Abstract': art.get('abstract'),
+            'Section': section,
+            'URL': art.get('web_url')
+        })
     return rows
 
 
-def _fetch_daily_search(source_key, keyword_patterns):
+def _fetch_daily_search(source_key):
     """
     Gebruikt de NYT Article Search API voor dagelijkse data.
-    Dit is de enige API die recente artikelen (gisteren/vandaag) geeft.
-    De Archive API heeft ~5-7 dagen vertraging.
+    Geen keyword query — haalt alle artikelen op en filtert lokaal op sectie.
     """
-    # Haal de afgelopen 2 dagen op als buffer
-    begin_date = (datetime.now() - timedelta(days=2)).strftime('%Y%m%d')
+    begin_date = (datetime.now() - timedelta(days=3)).strftime('%Y%m%d')
     end_date   = datetime.now().strftime('%Y%m%d')
 
     all_rows = []
     seen_headlines = set()
     page = 0
 
-    # Bouw een query van de eerste 10 keywords (API limiet op querylengte)
-    query = " OR ".join(KEYWORDS[:10])
-
     print(f"📰 NYT Search API: ophalen van {begin_date} t/m {end_date}...")
 
     while True:
         url = (
             f"https://api.nytimes.com/svc/search/v2/articlesearch.json"
-            f"?q={requests.utils.quote(query)}"
-            f"&begin_date={begin_date}&end_date={end_date}"
+            f"?begin_date={begin_date}&end_date={end_date}"
             f"&sort=newest&page={page}"
             f"&api-key={API_KEY}"
         )
@@ -139,12 +85,13 @@ def _fetch_daily_search(source_key, keyword_patterns):
             if not articles:
                 break
 
-            rows = _parse_articles(articles, source_key, keyword_patterns, seen_headlines)
+            rows = _parse_articles(articles, source_key, seen_headlines)
             all_rows.extend(rows)
 
-            # NYT Search API max 100 pagina's, 10 artikelen per pagina
             total_hits = data.get('response', {}).get('meta', {}).get('hits', 0)
-            if (page + 1) * 10 >= min(total_hits, 100):
+            print(f"   Pagina {page} — {len(rows)} matches / {total_hits} totaal")
+
+            if (page + 1) * 10 >= min(total_hits, 1000):
                 break
 
             page += 1
@@ -169,11 +116,6 @@ def factNews(engine, daily=False):
 
     source_key = result.iloc[0]['SourceKey']
 
-    keyword_patterns = [
-        re.compile(rf"\b{re.escape(word)}\b", re.IGNORECASE)
-        for word in KEYWORDS
-    ]
-
     FILENAME = "nyt_data.csv"
     file_path = CSV_PATH / FILENAME
     CSV_PATH.mkdir(parents=True, exist_ok=True)
@@ -182,7 +124,7 @@ def factNews(engine, daily=False):
     # DAILY MODE → Article Search API (recente data)
     # ──────────────────────────────────────────────
     if daily:
-        rows = _fetch_daily_search(source_key, keyword_patterns)
+        rows = _fetch_daily_search(source_key)
 
         if not rows:
             print("✅ Geen nieuwe artikelen gevonden voor vandaag.")
@@ -191,12 +133,13 @@ def factNews(engine, daily=False):
         df = pd.DataFrame(rows)
         df['DateKey'] = pd.to_datetime(df['DateKey'], format='ISO8601').dt.strftime('%Y%m%d').astype(int)
 
-        # Filter op vandaag én gisteren (weekend-safe)
-        today     = int(datetime.now().strftime('%Y%m%d'))
-        yesterday = int((datetime.now() - timedelta(days=1)).strftime('%Y%m%d'))
-        df = df[df['DateKey'].isin([today, yesterday])]
+        # Weekend-safe filter: pak altijd de afgelopen 3 dagen mee
+        today = datetime.now()
+        cutoff = int((today - timedelta(days=3)).strftime('%Y%m%d'))
+        df = df[df['DateKey'] >= cutoff]
 
-        print(f"✅ {len(df)} artikelen gevonden voor {yesterday} / {today}")
+        print(f"✅ {len(df)} artikelen gevonden (DateKey verdeling):")
+        print(df['DateKey'].value_counts().sort_index())
         return df
 
     # ──────────────────────────────────────────────
@@ -204,8 +147,8 @@ def factNews(engine, daily=False):
     # ──────────────────────────────────────────────
     CURRENT_YEAR  = datetime.now().year
     CURRENT_MONTH = datetime.now().month
-    START_YEAR    = 2016
-    START_MONTH   = 1
+    START_YEAR    = 2024
+    START_MONTH   = 4
 
     write_header = not file_path.exists()
     all_data = []
@@ -226,7 +169,7 @@ def factNews(engine, daily=False):
 
                 if response.status_code == 200:
                     articles = response.json().get('response', {}).get('docs', [])
-                    rows = _parse_articles(articles, source_key, keyword_patterns, seen_headlines)
+                    rows = _parse_articles(articles, source_key, seen_headlines)
                     year_data.extend(rows)
                 else:
                     print(f"   ❌ Fout {response.status_code} bij {year}-{month}")

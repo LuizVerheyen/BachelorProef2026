@@ -1,8 +1,6 @@
 from database.connectie.connectie import get_engine,loadIN
 from data.data_fetching.Econ.fetcher import econFetcher
-from data.data_fetching.news.fetcher import factNews
 from data.data_fetching.yahoo.fetcher import fetch_stocks_to_long_format
-from data.data_fetching.truthSocial.merged import dimTwitter,factTwitter
 engine = get_engine()
 
 

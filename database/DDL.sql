@@ -116,7 +116,6 @@ BEGIN
         Comments    INT,
         Likes       INT,
         Reposts     INT,
-        -- Views       INT, kan niet voor truthsocial
         CONSTRAINT PK_FactTwitter PRIMARY KEY (tweetID),
         FOREIGN KEY (TweetID) REFERENCES DimTwitter(TweetID),
     );
@@ -133,7 +132,6 @@ BEGIN
         Low             DECIMAL(18, 4),
         [Open]          DECIMAL(18, 4),
         Volume          BIGINT,
-        Movement_DoD    DECIMAL(18, 4),
         FOREIGN KEY (DateKey)  REFERENCES DimDate(DateKey),
         FOREIGN KEY (StockKey) REFERENCES DimStock(StockKey)
     );
@@ -146,7 +144,6 @@ BEGIN
         DateKey                 INT,
         USD                     DECIMAL(18, 4),
         OIL                     DECIMAL(18, 4),
-        CPI                     DECIMAL(18, 4),
         VIX                     DECIMAL(18, 4),
         YieldSpread             DECIMAL(18, 4),
         InfExpectation          DECIMAL(18, 4),
