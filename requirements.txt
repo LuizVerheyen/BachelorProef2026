@@ -1,31 +1,201 @@
-# Core
+# =========================
+# CORE / CONFIG
+# =========================
 python-dotenv
+requests
+rich
+click
 
-# Data handling
+# =========================
+# DATA HANDLING
+# =========================
 numpy
 pandas
+pandas_market_calendars
 
-# Market data
-yfinance
-
-# Social media scraping
-snscrape
-
-# Economic data
-fredapi
-requests
-
-# Feature engineering / indicators
-ta
-
-# Machine Learning
+# =========================
+# MACHINE LEARNING / AI
+# =========================
 scikit-learn
 tensorflow
 keras
+torch
+transformers
+tokenizers
+safetensors
+sympy
+ml_dtypes
+opt_einsum
+optree
 
-# Database
-sqlalchemy
-pyodbc
-
-# Visualization (later, for evaluation)
+# =========================
+# DATA SCIENCE / VISUALISATIE
+# =========================
 matplotlib
+contourpy
+cycler
+fonttools
+kiwisolver
+packaging
+
+# =========================
+# FINANCIAL / MARKET DATA
+# =========================
+yfinance
+fredapi
+ta
+exchange_calendars
+multitasking
+
+# =========================
+# SCRAPING / WEB DATA
+# =========================
+snscrape
+beautifulsoup4
+lxml
+feedparser
+gdeltdoc
+scrapfly-sdk
+ntscraper
+
+# HTTP / API CLIENTS
+httpx
+httpcore
+urllib3
+charset-normalizer
+idna
+certifi
+h11
+
+# =========================
+# AUTOMATION / BROWSER
+# =========================
+selenium
+undetected-chromedriver
+playwright
+PyAutoGUI
+PyGetWindow
+PyMsgBox
+PyScreeze
+pyperclip
+PyRect
+pytweening
+
+# =========================
+# DATABASE
+# =========================
+SQLAlchemy
+pyodbc
+peewee
+
+# =========================
+# JUPYTER / DEV TOOLS
+# =========================
+ipython
+ipykernel
+jupyter_client
+jupyter_core
+debugpy
+traitlets
+stack-data
+executing
+pure_eval
+prompt_toolkit
+wcwidth
+matplotlib-inline
+
+# =========================
+# UTILITIES
+# =========================
+joblib
+threadpoolctl
+tqdm
+filelock
+platformdirs
+psutil
+toolz
+sortedcontainers
+six
+typing_extensions
+fsspec
+zipp
+nest-asyncio
+importlib_metadata
+
+# =========================
+# DEEP LEARNING INFRA
+# =========================
+tensorboard
+tensorboard-data-server
+protobuf
+grpcio
+wrapt
+astunparse
+google-pasta
+flatbuffers
+gast
+libclang
+termcolor
+h5py
+
+# =========================
+# NLP / TOKEN / TEXT
+# =========================
+regex
+markdown-it-py
+mdurl
+Markdown
+
+# =========================
+# SCIENTIFIC / MATH
+# =========================
+mpmath
+networkx
+scipy
+
+# =========================
+# DATE / TIME / LOCALE
+# =========================
+python-dateutil
+pytz
+tzdata
+korean-lunar-calendar
+pyluach
+
+# =========================
+# NETWORK / WEBSOCKETS
+# =========================
+websocket-client
+websockets
+wsproto
+sniffio
+trio
+trio-websocket
+trio-typing
+
+# =========================
+# SECURITY / PARSING
+# =========================
+cffi
+pycparser
+PySocks
+outcome
+attrs
+
+# =========================
+# IMAGE / MEDIA
+# =========================
+pillow
+
+# =========================
+# OTHER / SPECIALIZED
+# =========================
+loguru
+namex
+annotated-doc
+backoff
+truthbrush
+kagglehub
+kagglesdk
+hf-xet
+huggingface_hub
