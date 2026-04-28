@@ -7,12 +7,26 @@ from dotenv import load_dotenv
 import re
 from pathlib import Path
 import sys
-from database.connectie.connectie import get_engine, getData
+from database.connectie.connectie import getData
 
 ROOT = Path().resolve()
 sys.path.append(str(ROOT))
 
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+import torch
+import torch.nn.functional as F
 load_dotenv()
+
+
+# FinBERT laden
+MODEL_NAME = "ProsusAI/finbert"
+
+
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
+
+labels = ["negative", "neutral", "positive"]
+
 
 API_KEY = os.getenv("NYT_API_KEY")
 CSV_PATH = Path(ROOT / "data" / "raw" / "news")
@@ -22,27 +36,55 @@ SECTIONS = ["Business Day", "Health", "Education", "Science", "Blogs",
             "World", "Your Money", "Technology", "Job Market"]
 
 
+def get_scores(text):
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True)
+
+    with torch.no_grad():
+        outputs = model(**inputs)
+
+    probs = F.softmax(outputs.logits, dim=1).numpy()[0]
+    prob_dict = dict(zip(labels, probs))
+
+    # Positivity (-1 → 1)
+    positivity = prob_dict["positive"] - prob_dict["negative"]
+
+    # Influence = model confidence
+    influence = max(probs)
+
+    return float(positivity), float(influence)
+
 def _parse_articles(articles, source_key, seen_headlines):
     """Filter artikelen enkel op sectie, geen keyword filtering."""
     rows = []
     for art in articles:
         headline = art.get('headline', {}).get('main', "").lower()
         section = art.get('section_name')
+        abstract = art.get('abstract')
 
         if not headline or section not in SECTIONS:
             continue
         if headline in seen_headlines:
             continue
+        
+        text = (headline or "") + " " + (abstract or "")
+        positivity, influence = get_scores(text)
+
+        print({
+            "positivity": positivity,
+            "influence": influence
+        })
 
         seen_headlines.add(headline)
         rows.append({
-            'DateKey': art.get('pub_date'),
-            'SourceKey': source_key,
-            'Headline': headline,
-            'Abstract': art.get('abstract'),
-            'Section': section,
-            'URL': art.get('web_url')
-        })
+                'DateKey': art.get('pub_date'),
+                'SourceKey': source_key,
+                'Headline': headline,
+                'Abstract': art.get('abstract'),
+                'Section': section,
+                'positivityScore': positivity,
+                'influenceScore': influence,
+                'URL': art.get('web_url')
+            })
     return rows
 
 
@@ -147,8 +189,8 @@ def factNews(engine, daily=False):
     # ──────────────────────────────────────────────
     CURRENT_YEAR  = datetime.now().year
     CURRENT_MONTH = datetime.now().month
-    START_YEAR    = 2024
-    START_MONTH   = 4
+    START_YEAR    = 2022
+    START_MONTH   = 1
 
     write_header = not file_path.exists()
     all_data = []
