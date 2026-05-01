@@ -17,6 +17,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 from database.connectie.connectie import getData
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+import torch
+import torch.nn.functional as F
 
 ET_TZ = pytz.timezone('US/Eastern')
 BE_TZ = pytz.timezone('Europe/Brussels')
@@ -25,10 +28,35 @@ USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 # Semaphore om gelijktijdig aanmaken van drivers te serialiseren (uc is niet thread-safe bij init)
 _driver_init_lock = threading.Semaphore(1)
 
+MODEL_NAME = "ProsusAI/finbert"
+
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
+
+labels = ["negative", "neutral", "positive"]
+
 
 # ==============================================================================
 # HELPERS
 # ==============================================================================
+
+def get_scores(text):
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True)
+
+    with torch.no_grad():
+        outputs = model(**inputs)
+
+    probs = F.softmax(outputs.logits, dim=1).numpy()[0]
+    prob_dict = dict(zip(labels, probs))
+
+    # Positivity (-1 → 1)
+    positivity = prob_dict["positive"] - prob_dict["negative"]
+
+    # Influence = model confidence
+    influence = max(probs)
+
+    return float(positivity), float(influence)
+
 
 def parse_date_time_to_be(raw_date_str):
     try:
@@ -339,11 +367,6 @@ def build_fact_twitter(engine, fact_raw: pd.DataFrame) -> pd.DataFrame:
 # ==============================================================================
 
 def _process_and_load_chunk(engine, chunk_data, driver, selenium_workers=3):
-    """
-    Verwerk één maand-chunk: original URLs, metadata, en laad in DB.
-
-    selenium_workers: aantal parallelle Chrome drivers voor de URL-fallback.
-    """
 
     df_chunk = pd.DataFrame(chunk_data)
     if df_chunk.empty:
@@ -351,14 +374,21 @@ def _process_and_load_chunk(engine, chunk_data, driver, selenium_workers=3):
 
     print(f"\n💾 Maand-chunk verwerken: {len(df_chunk)} posts...")
 
+    # 🔥 NIEUW: FinBERT scoring HIER doen (na filtering)
+    print("🧠 FinBERT scoring...")
+    
+    scores = df_chunk["Text"].fillna("").apply(get_scores)
+    df_chunk["positivityScore"] = scores.apply(lambda x: x[0])
+    df_chunk["influenceScore"]  = scores.apply(lambda x: x[1])
+
     # Stap 2 — originele URLs via requests (parallel)
     df_chunk = get_original_urls_parallel(df_chunk, max_workers=8)
 
-    # Stap 2b — parallel Selenium fallback voor niet-gevonden URLs
+    # Stap 2b — Selenium fallback
     if df_chunk['original_url'].isna().any():
         df_chunk = get_original_urls_selenium_fallback(df_chunk, max_workers=selenium_workers)
 
-    # Stap 3 — metadata via één gedeelde Selenium driver (sequentieel)
+    # Stap 3 — metadata
     if driver is None:
         driver = create_driver()
     if driver:
@@ -370,18 +400,24 @@ def _process_and_load_chunk(engine, chunk_data, driver, selenium_workers=3):
 
     print(f"  📝 {len(df_chunk)} tweets na filtering")
 
-    # Stap 4 — dim_df bouwen en laden
+    # Stap 4 — DimTwitter
     df_users = pd.read_sql("SELECT UserID, UserName FROM DimTwitterUsers", engine)
     merged   = df_chunk.merge(df_users, left_on="Username", right_on="UserName", how='inner')
-    dim_df   = merged[["DateKey", "TimeKey", "url", "Text", "UserID"]].reset_index(drop=True)
+
+    dim_df = merged[[
+        "DateKey", "TimeKey", "url", "Text", "UserID",
+        "positivityScore", "influenceScore"
+    ]].reset_index(drop=True)
 
     load_in_chunks(engine, dim_df, 'DimTwitter')
 
-    # Stap 5 — fact bouwen en laden
+    # Stap 5 — FactTwitter
     cols = ['Likes', 'Reposts', 'Comments']
     df_chunk[cols] = df_chunk[cols].fillna(0).astype(int)
+
     fact_raw = df_chunk[['url'] + cols].copy()
     fact_df  = build_fact_twitter(engine, fact_raw)
+
     if not fact_df.empty:
         load_in_chunks(engine, fact_df, 'FactTwitter')
 
@@ -414,7 +450,7 @@ def get_twitter_tables(engine, daily=False, selenium_workers=3):
 
     start_date = (
         (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
-        if daily else '2021-02-01'
+        if daily else '2026-04-27'
     )
     last_date = getData(engine=engine, query="SELECT min(datekey) from dimTwitter")
     last_date = str(last_date.iloc[0, 0])  # pak eerste rij, eerste kolom
@@ -498,6 +534,9 @@ def get_twitter_tables(engine, daily=False, selenium_workers=3):
                             pass
 
                     current_month = post_month
+                    text = post.find("div", class_='snippet-clean-content').text.strip()
+                    
+                    
                     current_chunk.append({
                         'url':          post_url,
                         'original_url': None,
@@ -550,3 +589,6 @@ def get_twitter_tables(engine, daily=False, selenium_workers=3):
 
     print("\n🏁 Pipeline volledig afgerond.")
     return pd.DataFrame(), pd.DataFrame()
+
+
+

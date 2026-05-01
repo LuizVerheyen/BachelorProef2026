@@ -79,8 +79,8 @@ BEGIN
         TimeKey         INT,
         [Text]          VARCHAR(MAX),
         [url]           VARCHAR(2048),
-        ImpactScore     FLOAT,
-        PositivityScore FLOAT
+        PositivityScore     DECIMAL(6,4),
+        influenceScore DECIMAL(6,4)
         FOREIGN KEY (UserID)  REFERENCES DimTwitterUsers(UserID),
         FOREIGN KEY (DateKey) REFERENCES DimDate(DateKey),
         FOREIGN KEY (TimeKey) REFERENCES DimTime(TimeKey)
@@ -168,8 +168,8 @@ BEGIN
         Headline    VARCHAR(MAX),
         Abstract    VARCHAR(MAX),
         Section     VARCHAR(100),
-        ImpactScore FLOAT,
-        PositivityScore FLOAT,
+        PositivityScore DECIMAL(6,4),
+        influenceScore DECIMAL(6,4),
         [URL] VARCHAR(2048)
         FOREIGN KEY (DateKey)   REFERENCES DimDate(DateKey),
         FOREIGN KEY (SourceKey) REFERENCES DimSource(SourceKey)
