@@ -52,3 +52,14 @@ experiments/
 # =========================
 .DS_Store
 Thumbs.db
+
+## png files in artifacts
+model/comparison/artifacts*
+model/*.png
+model/*.joblib
+## parquet files
+*.parquet
+
+*.pt
+
+

@@ -3,7 +3,137 @@ import pandas as pd
 import pandas_market_calendars as mcal
 from datetime import datetime, timedelta
 
-STOCKS = ['^GSPC', 'LMT', 'CVX', 'XOM', 'XLE', 'GLD', '^BFX', 'ABI.BR', 'UCB.BR', 'KBC.BR']
+STOCKS = [
+    # ===== Indices (geven baseline market regime + zijn vaak in nieuws) =====
+    '^GSPC',      # S&P 500
+    '^DJI',       # Dow Jones
+    '^IXIC',      # NASDAQ Composite
+    '^RUT',       # Russell 2000 (small-cap)
+    '^VIX',       # Volatility index (fear gauge)
+    '^BFX',       # BEL 20
+    '^STOXX50E',  # Euro Stoxx 50
+    '^FTSE',      # FTSE 100
+    '^GDAXI',     # DAX (Germany)
+    '^FCHI',      # CAC 40 (France)
+    '^AEX',       # AEX (Netherlands)
+    '^N225',      # Nikkei 225
+
+    # ===== US Broad-market ETFs =====
+    'SPY', 'QQQ', 'DIA', 'IWM', 'VTI', 'VOO',
+
+    # ===== US Sector ETFs (SPDR Select) — sterk gecorreleerd met sectoral news =====
+    'XLK',   # Technology
+    'XLF',   # Financials
+    'XLV',   # Healthcare
+    'XLE',   # Energy
+    'XLI',   # Industrials
+    'XLY',   # Consumer Discretionary
+    'XLP',   # Consumer Staples
+    'XLU',   # Utilities
+    'XLB',   # Materials
+    'XLRE',  # Real Estate
+    'XLC',   # Communication Services
+
+    # ===== Commodity / Bond ETFs (macro-sensitief) =====
+    'GLD',   # Gold
+    'SLV',   # Silver
+    'USO',   # Oil
+    'UNG',   # Natural gas
+    'DBA',   # Agriculture
+    'TLT',   # 20+ year Treasuries
+    'IEF',   # 7-10 year Treasuries
+    'UUP',   # US Dollar
+
+    # ===== US Mega/Large-cap Tech (veel news + sentiment) =====
+    'AAPL', 'MSFT', 'GOOGL', 'GOOG', 'AMZN', 'META', 'TSLA',
+    'NVDA', 'NFLX', 'ORCL', 'ADBE', 'CRM', 'INTC', 'AMD',
+    'CSCO', 'IBM', 'QCOM', 'AVGO', 'TXN', 'MU', 'AMAT',
+
+    # ===== US Financials =====
+    'JPM', 'BAC', 'WFC', 'C', 'GS', 'MS', 'AXP', 'V', 'MA',
+    'BLK', 'SCHW', 'USB', 'PNC', 'COF', 'AIG', 'BRK-B',
+
+    # ===== US Healthcare / Pharma =====
+    'JNJ', 'PFE', 'MRK', 'ABBV', 'LLY', 'UNH', 'CVS', 'BMY',
+    'GILD', 'MRNA', 'AMGN', 'ABT', 'MDT', 'TMO', 'DHR', 'ISRG',
+
+    # ===== US Consumer (Retail / Brands) =====
+    'WMT', 'KO', 'PEP', 'PG', 'MCD', 'NKE', 'SBUX', 'DIS',
+    'HD', 'LOW', 'COST', 'TGT',
+
+    # ===== US Energy =====
+    'CVX', 'XOM', 'OXY', 'COP', 'SLB', 'EOG', 'HAL',
+    'PSX', 'MPC', 'VLO',
+
+    # ===== US Industrials / Defense (macro + politiek gevoelig) =====
+    'BA', 'CAT', 'GE', 'HON', 'MMM', 'DE', 'RTX', 'UPS', 'FDX',
+    'LMT', 'NOC', 'GD',
+
+    # ===== US Auto / EV (high-sentiment) =====
+    'F', 'GM', 'RIVN', 'LCID',
+
+    # ===== US Telecom / Media =====
+    'T', 'VZ', 'TMUS', 'CMCSA',
+
+    # ===== US Crypto-exposed =====
+    'COIN', 'MSTR', 'RIOT', 'MARA',
+
+    # ===== US Meme / Retail-trader sentiment stocks =====
+    'GME', 'AMC', 'PLTR', 'BB',
+
+    # ===== Belgian (.BR) - Euronext Brussel =====
+    'ABI.BR',   # Anheuser-Busch InBev
+    'UCB.BR',   # UCB pharma
+    'KBC.BR',   # KBC Group
+    'SOLB.BR',  # Solvay
+    'ARGX.BR',  # argenx (biotech)
+    'UMI.BR',   # Umicore
+    'COLR.BR',  # Colruyt
+    'PROX.BR',  # Proximus
+    'AED.BR',   # Aedifica
+    'GBLB.BR',  # Groep Brussel Lambert
+    'AGS.BR',   # Ageas
+    'ELI.BR',   # Elia
+
+    # ===== Dutch (.AS) - Euronext Amsterdam =====
+    'ASML.AS',  # ASML Holding
+    'UNA.AS',   # Unilever
+    'INGA.AS',  # ING
+    'AD.AS',    # Ahold Delhaize
+    'PHIA.AS',  # Philips
+    'AKZA.AS',  # AkzoNobel
+    'HEIA.AS',  # Heineken
+    'RAND.AS',  # Randstad
+
+    # ===== German (.DE) - XETRA =====
+    'SAP.DE',   # SAP
+    'SIE.DE',   # Siemens
+    'ALV.DE',   # Allianz
+    'BMW.DE',   # BMW
+    'MBG.DE',   # Mercedes-Benz Group
+    'VOW3.DE',  # Volkswagen
+    'BAS.DE',   # BASF
+    'DTE.DE',   # Deutsche Telekom
+    'BAYN.DE',  # Bayer
+
+    # ===== French (.PA) - Euronext Paris =====
+    'MC.PA',    # LVMH
+    'OR.PA',    # L'Oreal
+    'AIR.PA',   # Airbus
+    'BNP.PA',   # BNP Paribas
+    'SAN.PA',   # Sanofi
+    'TTE.PA',   # TotalEnergies
+    'CS.PA',    # AXA
+
+    # ===== UK (.L) - London Stock Exchange =====
+    'BP.L',     # BP
+    'HSBA.L',   # HSBC
+    'GSK.L',    # GSK pharma
+    'AZN.L',    # AstraZeneca
+    'ULVR.L',   # Unilever UK
+    'RIO.L',    # Rio Tinto
+    'SHEL.L',   # Shell
+]
 
 
 def get_last_trading_day() -> str:

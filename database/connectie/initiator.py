@@ -5,6 +5,7 @@ from data.data_fetching.dimTime.fetcher import dimTime
 from data.data_fetching.news.fetcher import factNews,dimSource
 from data.data_fetching.yahoo.fetcher import fetch_stocks_to_long_format
 from data.data_fetching.truthSocial.merged import get_twitter_tables, build_fact_twitter
+from data.data_fetching.x_twitter.load import load_x_tweets   # <-- NIEUW
 from data.data_fetching.news.fetcher import factNews
 engine = get_engine()
 
@@ -19,7 +20,7 @@ def pipeline():
         
         # dimstock, factMarketData = fetch_stocks_to_long_format()
         
-        # loadIN(engine=engine, df=dimstock, table='DimStock', if_exists='replace')
+        # loadIN(engine=engine, df=dimstock, table='DimStock')
         # loadIN(engine=engine, df=dimSource(), table='DimSource')
         
         # if not dim_df.empty:
@@ -27,9 +28,12 @@ def pipeline():
         #     fact_df = build_fact_twitter(engine, fact_raw)  # leest TweetIDs na insert
         #     loadIN(engine, fact_df, 'FactTwitter')
             
+        # Nieuwe stap: laad X (Twitter) CSV in DimTwitter (append-only)
+        load_x_tweets(engine, compute_sentiment=False)
+            
         # loadIN(engine=engine, df=econFetcher(), table="FactEcon")
-        # loadIN(engine=engine, df=factMarketData, table='FactMarketData', if_exists='replace')  
-        loadIN(engine=engine, df=factNews(engine=engine,daily=False), table='FactNews')
+        # loadIN(engine=engine, df=factMarketData, table='FactMarketData')  
+        # loadIN(engine=engine, df=factNews(engine=engine,daily=False), table='FactNews')
     except Exception as e:
         print(f"er is iets fout gegaan:\n {e}")
         

@@ -104,7 +104,7 @@ def create_driver():
 def bypass_cloudflare(driver):
     try:
         if "Cloudflare" in driver.title or "Just a moment" in driver.title:
-            print("🛡️ Cloudflare gedetecteerd, poging tot bypass...")
+            print("Cloudflare gedetecteerd, poging tot bypass...")
             time.sleep(2)
             for iframe in driver.find_elements(By.TAG_NAME, "iframe"):
                 try:

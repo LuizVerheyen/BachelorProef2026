@@ -3,40 +3,70 @@
 # =========================
 python-dotenv
 requests
+httpx
 rich
 click
+PyYAML
+orjson
+typing_extensions
 
 # =========================
 # DATA HANDLING
 # =========================
 numpy
 pandas
-pandas_market_calendars
+pyarrow
+fastparquet
+cramjam
+fsspec
+xxhash
 
 # =========================
-# MACHINE LEARNING / AI
+# DATA SCIENCE / ML
 # =========================
 scikit-learn
+scipy
+joblib
+threadpoolctl
+
+# =========================
+# DEEP LEARNING / AI
+# =========================
 tensorflow
 keras
 torch
+torchaudio
+torchvision
+
 transformers
 tokenizers
+sentence-transformers
 safetensors
+
 sympy
-ml_dtypes
-opt_einsum
-optree
+networkx
+mpmath
 
 # =========================
-# DATA SCIENCE / VISUALISATIE
+# LLM / AGENTS
+# =========================
+langchain-core
+langchain-groq
+langsmith
+groq
+huggingface_hub
+
+# =========================
+# BOOSTING / MODELS
+# =========================
+xgboost
+lightgbm
+
+# =========================
+# VISUALIZATION
 # =========================
 matplotlib
-contourpy
-cycler
-fonttools
-kiwisolver
-packaging
+seaborn
 
 # =========================
 # FINANCIAL / MARKET DATA
@@ -45,142 +75,81 @@ yfinance
 fredapi
 ta
 exchange_calendars
-multitasking
+pandas_market_calendars
 
 # =========================
 # SCRAPING / WEB DATA
 # =========================
-snscrape
 beautifulsoup4
 lxml
 feedparser
+snscrape
+ntscraper
 gdeltdoc
 scrapfly-sdk
-ntscraper
-
-# HTTP / API CLIENTS
-httpx
-httpcore
-urllib3
-charset-normalizer
-idna
-certifi
-h11
+curl_cffi
 
 # =========================
 # AUTOMATION / BROWSER
 # =========================
 selenium
-undetected-chromedriver
 playwright
+undetected-chromedriver
+
 PyAutoGUI
 PyGetWindow
 PyMsgBox
 PyScreeze
-pyperclip
 PyRect
+pyperclip
 pytweening
 
 # =========================
 # DATABASE
 # =========================
 SQLAlchemy
-pyodbc
 peewee
+pyodbc
 
 # =========================
-# JUPYTER / DEV TOOLS
+# NOTEBOOK / DEV
 # =========================
 ipython
 ipykernel
 jupyter_client
 jupyter_core
 debugpy
-traitlets
-stack-data
-executing
-pure_eval
-prompt_toolkit
-wcwidth
-matplotlib-inline
+nbformat
 
 # =========================
-# UTILITIES
-# =========================
-joblib
-threadpoolctl
-tqdm
-filelock
-platformdirs
-psutil
-toolz
-sortedcontainers
-six
-typing_extensions
-fsspec
-zipp
-nest-asyncio
-importlib_metadata
-
-# =========================
-# DEEP LEARNING INFRA
-# =========================
-tensorboard
-tensorboard-data-server
-protobuf
-grpcio
-wrapt
-astunparse
-google-pasta
-flatbuffers
-gast
-libclang
-termcolor
-h5py
-
-# =========================
-# NLP / TOKEN / TEXT
+# NLP / TEXT
 # =========================
 regex
-markdown-it-py
-mdurl
 Markdown
+markdown-it-py
+vaderSentiment
 
 # =========================
-# SCIENTIFIC / MATH
-# =========================
-mpmath
-networkx
-scipy
-
-# =========================
-# DATE / TIME / LOCALE
+# DATE / TIME
 # =========================
 python-dateutil
 pytz
 tzdata
-korean-lunar-calendar
-pyluach
 
 # =========================
-# NETWORK / WEBSOCKETS
+# NETWORKING
 # =========================
 websocket-client
 websockets
-wsproto
-sniffio
 trio
 trio-websocket
-trio-typing
 
 # =========================
-# SECURITY / PARSING
+# SECURITY / LOW LEVEL
 # =========================
 cffi
-pycparser
 PySocks
-outcome
-attrs
+cryptography
 
 # =========================
 # IMAGE / MEDIA
@@ -188,14 +157,19 @@ attrs
 pillow
 
 # =========================
-# OTHER / SPECIALIZED
+# UTILITIES
 # =========================
+tqdm
+psutil
+platformdirs
+filelock
+packaging
 loguru
-namex
-annotated-doc
+tenacity
 backoff
-truthbrush
+
+# =========================
+# KAGGLE
+# =========================
 kagglehub
 kagglesdk
-hf-xet
-huggingface_hub

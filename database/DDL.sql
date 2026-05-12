@@ -128,7 +128,7 @@ BEGIN
     CREATE TABLE FactMarketData (
         MarketKey       INT IDENTITY (1,1) PRIMARY KEY,
         DateKey         INT,
-        StockKey        INT,
+        StockKey        VARCHAR(10),
         [Close]         DECIMAL(18, 4),
         High            DECIMAL(18, 4),
         Low             DECIMAL(18, 4),
