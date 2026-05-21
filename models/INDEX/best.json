@@ -1,0 +1,9 @@
+{
+  "model_name": "GRU",
+  "accuracy": 0.539333562349708,
+  "n_samples": 2911,
+  "stock_type": "INDEX",
+  "notebook_version": "V3-binary",
+  "timestamp": "2026-05-12T21:19:53",
+  "model_file": "GRU.pt"
+}

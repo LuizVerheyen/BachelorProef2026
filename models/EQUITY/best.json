@@ -1,0 +1,9 @@
+{
+  "model_name": "LightGBM",
+  "accuracy": 0.5254250506941195,
+  "n_samples": 38466,
+  "stock_type": "EQUITY",
+  "notebook_version": "V3-binary",
+  "timestamp": "2026-05-12T21:19:53",
+  "model_file": "LightGBM.joblib"
+}

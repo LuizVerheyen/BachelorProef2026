@@ -1,0 +1,9 @@
+{
+  "model_name": "LightGBM",
+  "accuracy": 0.5367300380228137,
+  "n_samples": 6575,
+  "stock_type": "ETF",
+  "notebook_version": "V3-binary",
+  "timestamp": "2026-05-12T21:19:53",
+  "model_file": "LightGBM.joblib"
+}
