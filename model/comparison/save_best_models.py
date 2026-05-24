@@ -8,6 +8,11 @@ Folder structuur na een run:
         EQUITY/
             best.json
             XGBoost.joblib
+            scaler.joblib            (optioneel, voor Streamlit-inferentie)
+            feature_cols.json        (optioneel)
+            stk_cols.json            (optioneel)
+            best_pnl.json            (optioneel)
+            predictions.csv          (optioneel)
         INDEX/
             best.json
             1D-CNN.pt
@@ -15,13 +20,16 @@ Folder structuur na een run:
             best.json
             LogReg_op_signalen.joblib
 
-best.json bevat metadata: model_name, accuracy, timestamp, notebook_version, n_samples.
+best.json bevat metadata: model_name, accuracy, timestamp, notebook_version, n_samples,
+en (indien meegegeven) verwijzingen naar scaler_file / feature_cols_file / stk_cols_file
+en de extra meta keys (horizon_days, position_size_eur, strategy, ...).
 
 Usage in een notebook:
     from model.comparison.save_best_models import save_best_per_type
     save_best_per_type(predictions, trained_models, market_df,
                        models_dir=PROJECT_ROOT / "models",
-                       notebook_version="V2")
+                       notebook_version="V2",
+                       scaler=scaler, feature_cols=FEATURE_COLS, stk_cols=stk_cols)
 """
 from __future__ import annotations
 
@@ -71,10 +79,19 @@ def save_best_per_type(
     predictions: dict,
     trained_models: dict,
     market_df: pd.DataFrame,
-    models_dir: Path | str,
+    models_dir: "Path | str",
     notebook_version: str = "unknown",
     only_replace_if_better: bool = True,
     min_samples_per_type: int = 5,
+    # ---- NIEUW: artefacten voor inferentie (Streamlit) ----
+    scaler=None,
+    feature_cols: list | None = None,
+    stk_cols: list | None = None,
+    seq_len: int | None = None,
+    extra_meta: dict | None = None,
+    # ---- NIEUW: P&L stats + predictions CSV ----
+    pnl_stats_per_type: dict | None = None,
+    save_predictions_csv: bool = False,
 ) -> dict:
     """
     Voor elke unieke StockType: vind het model met de hoogste gemiddelde test
@@ -83,14 +100,20 @@ def save_best_per_type(
 
     Args:
         predictions: dict {model_name: {"stock_id", "y_true", "y_pred", ...}}
-                     zoals door log_metrics gevuld in elke notebook
         trained_models: dict {model_name: trained model object}
-                        bv {"XGBoost": xgb_clf, "1D-CNN": torch_model, ...}
         market_df: DataFrame met "stock_id" en "StockType" kolommen
         models_dir: root directory om alles op te slaan (bv PROJECT_ROOT/"models")
         notebook_version: voor logging in best.json (bv "V2", "V3", "V4")
         only_replace_if_better: True = behoud bestaande als die hoger scoort
         min_samples_per_type: skip stock types met te weinig test rijen
+        scaler: fitted StandardScaler (optioneel) - bewaard als scaler.joblib
+        feature_cols: lijst feature kolomnamen (zonder stk_ dummies)
+        stk_cols: lijst van one-hot stk_ kolommen (stock encoding)
+        seq_len: lookback voor sequence modellen
+        extra_meta: extra info om in best.json mee te schrijven
+        pnl_stats_per_type: dict {stock_type: {model_name: stats_jsonable}}
+                            - voor de winnaar wordt stats opgeslagen als best_pnl.json
+        save_predictions_csv: bewaar predictions van winnaar als predictions.csv
 
     Returns:
         dict {stock_type: best_model_meta}
@@ -98,7 +121,6 @@ def save_best_per_type(
     models_dir = Path(models_dir)
     models_dir.mkdir(parents=True, exist_ok=True)
 
-    # Map stock_id -> StockType
     if "StockType" not in market_df.columns or "stock_id" not in market_df.columns:
         raise ValueError("market_df mist StockType of stock_id kolommen")
     type_map = (
@@ -159,13 +181,11 @@ def save_best_per_type(
             except Exception as e:
                 print(f"  [{stype}] bestaande best.json onleesbaar ({e}), overschrijven")
 
-        # Pak het model object
         model_obj = trained_models.get(best["model"])
         if model_obj is None:
             print(f"  [{stype:>15s}] SKIP   '{best['model']}' niet in trained_models")
             continue
 
-        # Save
         try:
             base_path = type_dir / _sanitize(best["model"])
             saved_path = _save_model_file(model_obj, base_path)
@@ -178,10 +198,60 @@ def save_best_per_type(
                 "timestamp":        datetime.now().isoformat(timespec="seconds"),
                 "model_file":       saved_path.name,
             }
+
+            # ---- Inferentie-artefacten meeschrijven ----
+            if scaler is not None:
+                scaler_path = type_dir / "scaler.joblib"
+                joblib.dump(scaler, scaler_path)
+                meta["scaler_file"] = scaler_path.name
+            if feature_cols is not None:
+                (type_dir / "feature_cols.json").write_text(
+                    json.dumps(list(feature_cols), indent=2), encoding="utf-8")
+                meta["feature_cols_file"] = "feature_cols.json"
+                meta["n_features"] = len(feature_cols)
+            if stk_cols is not None:
+                (type_dir / "stk_cols.json").write_text(
+                    json.dumps(list(stk_cols), indent=2), encoding="utf-8")
+                meta["stk_cols_file"] = "stk_cols.json"
+                meta["n_stocks"] = len(stk_cols)
+            if seq_len is not None:
+                meta["seq_len"] = int(seq_len)
+            if extra_meta:
+                for k, v in extra_meta.items():
+                    meta.setdefault(k, v)
+
             meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
             saved[stype] = meta
             print(f"  [{stype:>15s}] SAVED  {best['model']:30s} "
                   f"acc={best['acc']:.3f}  ->  {saved_path.name}")
+
+            # ---- P&L stats voor winnend model ----
+            if pnl_stats_per_type and stype in pnl_stats_per_type:
+                stats_for_winner = pnl_stats_per_type[stype].get(best["model"])
+                if stats_for_winner is not None:
+                    (type_dir / "best_pnl.json").write_text(
+                        json.dumps(stats_for_winner, indent=2, default=str),
+                        encoding="utf-8")
+                    print(f"  {' ':>15s}  -> best_pnl.json")
+
+            # ---- Predictions CSV voor winnend model ----
+            if save_predictions_csv:
+                p = predictions.get(best["model"], {})
+                cols = {}
+                for k in ("stock_id", "Date", "Close", "y_true", "y_pred", "y_proba", "y_return"):
+                    if k in p and p[k] is not None:
+                        v = p[k]
+                        if hasattr(v, "ndim") and v.ndim > 1:
+                            continue
+                        cols[k] = v
+                if cols and "stock_id" in cols:
+                    dfp = pd.DataFrame(cols)
+                    type_map_local = market_df.groupby("stock_id")["StockType"].first().to_dict()
+                    dfp["stock_type"] = dfp["stock_id"].map(type_map_local)
+                    dfp = dfp[dfp["stock_type"] == stype].drop(columns=["stock_type"])
+                    csv_path = type_dir / "predictions.csv"
+                    dfp.to_csv(csv_path, index=False)
+                    print(f"  {' ':>15s}  -> predictions.csv ({len(dfp)} rijen)")
         except Exception as e:
             print(f"  [{stype:>15s}] FAILED save: {e}")
 
@@ -195,7 +265,7 @@ def save_best_per_type(
     return saved
 
 
-def load_best_for_type(stock_type: str, models_dir: Path | str):
+def load_best_for_type(stock_type: str, models_dir: "Path | str"):
     """Helper om een opgeslagen best model te herladen voor inferentie."""
     models_dir = Path(models_dir)
     type_dir = models_dir / _sanitize(stock_type)

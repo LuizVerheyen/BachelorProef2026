@@ -1,0 +1,18 @@
+{
+  "mode": "binary",
+  "position_size": 1000.0,
+  "nbr_trades": 2104,
+  "winning": 1139,
+  "losing": 918,
+  "even": 47,
+  "total_gain": 10010.21767247999,
+  "total_loss": -7263.000427142948,
+  "net_pnl": 2747.217245337042,
+  "avg_gain": 8.788601995153634,
+  "avg_loss": -7.911765171179682,
+  "gain_loss_ratio": 1.1108269526461705,
+  "win_pct": 0.5413498098859315,
+  "avg_pnl_per_trade": 1.3057116185061988,
+  "best_trade": 128.59304084720137,
+  "worst_trade": -183.86346004654774
+}

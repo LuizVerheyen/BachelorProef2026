@@ -1,9 +1,18 @@
 {
-  "model_name": "LightGBM",
-  "accuracy": 0.5367300380228137,
-  "n_samples": 6575,
+  "model_name": "GRU",
+  "accuracy": 0.5415198792148969,
+  "n_samples": 5961,
   "stock_type": "ETF",
   "notebook_version": "V3-binary",
-  "timestamp": "2026-05-12T21:19:53",
-  "model_file": "LightGBM.joblib"
+  "timestamp": "2026-05-24T18:12:11",
+  "model_file": "GRU.pt",
+  "scaler_file": "scaler.joblib",
+  "feature_cols_file": "feature_cols.json",
+  "n_features": 38,
+  "stk_cols_file": "stk_cols.json",
+  "n_stocks": 181,
+  "horizon_days": 1,
+  "threshold_neutral": 0.005,
+  "position_size_eur": 1000.0,
+  "strategy": "long-only on y_pred==1"
 }
